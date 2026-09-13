@@ -1,0 +1,14 @@
+apiVersion: courier.sororlab.dev/v1alpha1
+kind: OAuthClient
+metadata:
+  name: report-exporter
+  namespace: team-bravo
+spec:
+  displayName: "team-bravo: nightly report exporter"
+  clientType: confidential
+  grantTypes:
+    - client_credentials
+  scopes:
+    - openid
+    - profile
+    - groups
