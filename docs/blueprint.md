@@ -150,6 +150,11 @@ type IdentityProvider interface {
 Exact field shapes (for example Authentik's newer `redirect_uris` list of
 `{matching_mode, url}`) are pinned in adapter tests against the running version.
 
+Confirmed in Phase 0 (Authentik 2026.8.2): OAuth2 providers carry an explicit
+`grant_types` allow-list. An empty list rejects `client_credentials` with
+`Invalid grant_type for provider`, so the adapter must always set it from
+`spec.grantTypes`.
+
 ## Vault layout and access
 
 Backend: Vault Community Edition ([ADR 0001](adr/0001-vault-ce-for-proof-of-value.md)).

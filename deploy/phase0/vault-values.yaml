@@ -1,0 +1,104 @@
+# Vault Community Edition for the Courier proof of value.
+# Chart: hashicorp/vault 0.34.1 (Vault 2.0.4) from https://helm.releases.hashicorp.com
+#
+# This file is canonical; the ArgoCD Application in homelab-charts inlines a copy.
+#
+# Prerequisite, created out of band (never in git):
+#   Secret vault/vault-awskms with AWS_REGION, VAULT_AWSKMS_SEAL_KEY_ID,
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY for KMS auto-unseal.
+
+global:
+  enabled: true
+  tlsDisable: true          # TLS terminates at the Cilium ingress
+
+injector:
+  enabled: false            # workloads will use External Secrets in Phase 2
+
+server:
+  image:
+    repository: hashicorp/vault
+    tag: "2.0.4"
+  logFormat: json
+
+  extraSecretEnvironmentVars:
+    - envName: AWS_REGION
+      secretName: vault-awskms
+      secretKey: AWS_REGION
+    - envName: VAULT_AWSKMS_SEAL_KEY_ID
+      secretName: vault-awskms
+      secretKey: VAULT_AWSKMS_SEAL_KEY_ID
+    - envName: AWS_ACCESS_KEY_ID
+      secretName: vault-awskms
+      secretKey: AWS_ACCESS_KEY_ID
+    - envName: AWS_SECRET_ACCESS_KEY
+      secretName: vault-awskms
+      secretKey: AWS_SECRET_ACCESS_KEY
+
+  # Local disk, not NFS: avoids the hard-mount hang on node restarts.
+  dataStorage:
+    enabled: true
+    size: 5Gi
+    storageClass: local-path
+  auditStorage:
+    enabled: true
+    size: 5Gi
+    storageClass: local-path
+
+  ingress:
+    enabled: true
+    ingressClassName: cilium
+    annotations:
+      ingress.cilium.io/loadbalancer-mode: shared
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    pathType: Prefix
+    activeService: true
+    hosts:
+      - host: vault.sororlab.dev
+        paths: []
+    tls:
+      - secretName: vault-tls
+        hosts:
+          - vault.sororlab.dev
+
+  standalone:
+    enabled: false
+
+  # Integrated storage (raft) with one replica, so more nodes can join later
+  # without a storage migration.
+  ha:
+    enabled: true
+    replicas: 1
+    disruptionBudget:
+      enabled: false        # a 1-replica PDB would block node drains
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+        disable_mlock = true
+
+        listener "tcp" {
+          tls_disable     = 1
+          address         = "[::]:8200"
+          cluster_address = "[::]:8201"
+          telemetry {
+            unauthenticated_metrics_access = true
+          }
+        }
+
+        storage "raft" {
+          path = "/vault/data"
+        }
+
+        # Region and key id come from AWS_REGION / VAULT_AWSKMS_SEAL_KEY_ID.
+        seal "awskms" {}
+
+        service_registration "kubernetes" {}
+
+        telemetry {
+          prometheus_retention_time = "30s"
+          disable_hostname          = true
+        }
+
+ui:
+  enabled: true
