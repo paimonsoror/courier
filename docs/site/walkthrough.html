@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Courier Walkthrough: Pull Request #1</title>
+<meta name="description" content="A real request followed end to end: pull request, policy gate, approval label, merge, ArgoCD sync, credential delivery and access verification, with the evidence captured at each step.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/courier.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Courier <small>OAuth client delivery</small></a>
+  <nav class="site-nav" aria-label="Documentation">
+    <a href="index.html">Overview</a>
+    <a href="how-it-works.html">How it works</a>
+    <a href="walkthrough.html" aria-current="page">Walkthrough</a>
+    <a href="request-a-client.html">Request a client</a>
+    <a href="implementation.html">Implementation guide</a>
+    <a href="reference.html">Reference</a>
+  </nav>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="On this page">
+    <p>On this page</p>
+    <ol>
+      <li><a href="#glance">At a glance</a></li>
+      <li><a href="#request">1. The request</a></li>
+      <li><a href="#gate">2. The policy gate</a></li>
+      <li><a href="#approval">3. Approval</a></li>
+      <li><a href="#merge">4. Merge</a></li>
+      <li><a href="#sync">5. ArgoCD sync</a></li>
+      <li><a href="#deliver">6. Delivery</a></li>
+      <li><a href="#access">7. Access verified</a></li>
+      <li><a href="#absent">What never happened</a></li>
+      <li><a href="#learned">What we learned</a></li>
+      <li><a href="#reproduce">Reproduce it</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="doc">
+      <div class="meta">
+        <span class="audience">Everyone</span>
+        <span>Pull request <b>#1</b></span>
+        <span>Date <b>2026-09-13</b></span>
+        <span>Times <b>UTC</b></span>
+      </div>
+      <h1>One request, end to end</h1>
+      <p class="lede">This page follows a real request through Courier in the reference environment: team-bravo asks for a machine-to-machine client. At every step it shows what happened, the evidence captured at the time, and the command that lets you check the same thing yourself. Nothing here is illustrative; timestamps, messages and outputs are from the run.</p>
+    </header>
+
+    <section id="glance">
+      <h2>At a glance</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Step</th><th>Actor</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td><code>20:51:29</code></td><td>Pull request #1 opened</td><td>requester</td><td>One file added: <code>requests/team-bravo/report-exporter.yaml</code></td></tr>
+            <tr><td><code>20:51:53</code></td><td>Policy check</td><td>GitHub Actions</td><td><span class="pill p-bad">failed</span> approval label missing (18 s run)</td></tr>
+            <tr><td><code>20:53:08</code></td><td>Label <code>security-approved</code> added</td><td>approver</td><td>Check re-ran automatically</td></tr>
+            <tr><td><code>20:53:29</code></td><td>Policy check</td><td>GitHub Actions</td><td><span class="pill p-good">passed</span></td></tr>
+            <tr><td><code>21:40:39</code></td><td>Merged as <code>de172bd</code></td><td>maintainer</td><td>Request is now on <code>main</code></td></tr>
+            <tr><td><code>~21:41</code></td><td>Sync</td><td>ArgoCD</td><td>Application <code>courier-requests-team-bravo</code> created and synced</td></tr>
+            <tr><td><code>21:41:45</code></td><td>Credentials issued</td><td>controller</td><td><code>READY True</code>, credentials in vault</td></tr>
+            <tr><td><code>21:42</code></td><td>Access check</td><td>verification script</td><td><span class="pill p-good">passed</span> owner reads and uses them; other team denied</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>Merge to usable credentials: about 66 seconds</strong>, including a manual ArgoCD refresh (see <a href="#sync">step 5</a>). No person saw, copied or transmitted the secret.</p>
+    </section>
+
+    <section id="request">
+      <h2>1. The request</h2>
+      <p>The requester added a single file on branch <code>request/team-bravo-report-exporter</code>. The team directory makes team-bravo the owner; nothing in the file can point the credentials anywhere else.</p>
+<pre><code><span class="c"># requests/team-bravo/report-exporter.yaml</span>
+<span class="k">apiVersion</span>: courier.sororlab.dev/v1alpha1
+<span class="k">kind</span>: OAuthClient
+<span class="k">metadata</span>:
+  <span class="k">name</span>: report-exporter
+  <span class="k">namespace</span>: team-bravo
+<span class="k">spec</span>:
+  <span class="k">displayName</span>: "team-bravo: nightly report exporter"
+  <span class="k">clientType</span>: confidential
+  <span class="k">grantTypes</span>:
+    - client_credentials
+  <span class="k">scopes</span>:
+    - openid
+    - profile
+    - groups</code></pre>
+      <p class="label">Check it yourself</p>
+<pre><code>go run ./cmd/courier validate requests</code></pre>
+    </section>
+
+    <section id="gate">
+      <h2>2. The policy gate stops it</h2>
+      <p>Opening the pull request triggered the <strong>Client requests / Validate requests</strong> check. The file was valid, but <code>client_credentials</code> lets a workload act as itself, so the repository policy requires an explicit approval label. The check failed in 18 seconds and put this annotation on the file:</p>
+<pre><code><span class="s">requests/team-bravo/report-exporter.yaml</span>
+needs the "security-approved" label on the pull request (grant requires approval)</code></pre>
+      <p>The run summary showed reviewers exactly what merging would do, before anything existed:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Change</th><th>Team</th><th>Client</th><th>Type</th><th>Grants</th><th>Credentials path</th><th>Approval</th></tr></thead>
+          <tbody>
+            <tr><td>added or changed</td><td>team-bravo</td><td><code>report-exporter</code></td><td>confidential</td><td>client_credentials</td><td><code>kv/teams/team-bravo/oauth-clients/team-bravo-report-exporter</code></td><td>needs label <code>security-approved</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <span class="label">Why this matters</span>
+        <p>The rule came from <code>requests/.policy.yaml</code> (<code>grantApprovals: client_credentials: security-approved</code>), a file only the identity team can change. The approval requirement applies to the requests a pull request changes, so existing clients never need re-approval.</p>
+      </div>
+    </section>
+
+    <section id="approval">
+      <h2>3. Approval re-runs the gate</h2>
+      <p>At <code>20:53:08</code> the <code>security-approved</code> label was added. The workflow listens for <code>labeled</code> events, so the check re-ran without a new commit and passed at <code>20:53:29</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Check run on <code>976f8ce</code></th><th>Started</th><th>Completed</th><th>Conclusion</th></tr></thead>
+          <tbody>
+            <tr><td>Validate requests</td><td><code>20:51:35</code></td><td><code>20:51:53</code></td><td><span class="pill p-bad">failure</span></td></tr>
+            <tr><td>Validate requests</td><td><code>20:53:12</code></td><td><code>20:53:29</code></td><td><span class="pill p-good">success</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="label">Check it yourself</p>
+<pre><code>curl -s https://api.github.com/repos/paimonsoror/courier/commits/976f8ce/check-runs \
+  | jq '.check_runs[] | select(.name=="Validate requests") | {conclusion, started_at, completed_at}'</code></pre>
+    </section>
+
+    <section id="merge">
+      <h2>4. Merge</h2>
+      <p>The pull request merged at <code>21:40:39</code> as commit <code>de172bd</code>, and the branch was deleted.</p>
+      <div class="callout warn">
+        <span class="label">Gap found during this run</span>
+        <p>No code-owner review is recorded on #1. Branch protection was not yet enabled on <code>main</code> (the GitHub API reported <code>protected: false</code>), so GitHub allowed the merge with a passing check but no review. The label gate did its job; the review gate was not switched on. Enable branch protection as described in the <a href="implementation.html#gitops">implementation guide</a> before real teams use the repository.</p>
+      </div>
+    </section>
+
+    <section id="sync">
+      <h2>5. ArgoCD picks up the merge</h2>
+      <p>The <code>courier-requests</code> ApplicationSet saw a new directory, <code>requests/team-bravo</code>, and generated an application for it. The locked project allowed it to create exactly one kind of object: the <code>OAuthClient</code> in namespace <code>team-bravo</code>.</p>
+<pre><code>$ kubectl -n argocd get application -l app.kubernetes.io/part-of=courier
+<span class="c">NAME                          SYNC     HEALTH    REV</span>
+courier-controller            Synced   Healthy   de172bd07d1f67f87205325ff5fbde04ee12ea2d
+courier-requests-team-alpha   Synced   Healthy   de172bd07d1f67f87205325ff5fbde04ee12ea2d
+courier-requests-team-bravo   Synced   Healthy   de172bd07d1f67f87205325ff5fbde04ee12ea2d</code></pre>
+      <div class="callout">
+        <span class="label">Timing</span>
+        <p>A minute after merge the team-bravo application did not exist yet: ArgoCD polls Git every few minutes by default. We asked the ApplicationSet to re-read Git immediately, and the application appeared within seconds. Without the refresh the same thing happens on the next poll. A GitHub webhook to ArgoCD removes the wait.</p>
+      </div>
+<pre><code>kubectl -n argocd annotate applicationset courier-requests \
+  argocd.argoproj.io/application-set-refresh=true --overwrite</code></pre>
+    </section>
+
+    <section id="deliver">
+      <h2>6. The controller delivers</h2>
+      <p>The controller validated the object again with the same rules as the pull request check, wrote the new secret to the vault as <code>pending</code>, created the client in Authentik with that secret, bound it to group <code>team-bravo</code>, and promoted the vault entry to <code>active</code>.</p>
+<pre><code>$ kubectl get oauthclients -A
+<span class="c">NAMESPACE    NAME              READY   TYPE           CLIENT ID                                  SECRET PATH</span>
+team-alpha   billing-sync      True    confidential   BmNrqqyjaqWKLHgXPC7CtpBmKNo2Pye6DQjNMj6F   kv/teams/team-alpha/oauth-clients/team-alpha-billing-sync
+team-bravo   report-exporter   True    confidential   8BhnTaEg83o1lfhlwLSbBqHL6N5rMGOdsUi9rfA9   kv/teams/team-bravo/oauth-clients/team-bravo-report-exporter</code></pre>
+      <p>The controller log records the event with the client ID and path only:</p>
+<pre><code>2026-09-13T21:41:45Z  INFO  issued credentials
+  OAuthClient: team-bravo/report-exporter
+  client:      team-bravo-report-exporter
+  clientId:    8BhnTaEg83o1lfhlwLSbBqHL6N5rMGOdsUi9rfA9
+  path:        kv/teams/team-bravo/oauth-clients/team-bravo-report-exporter</code></pre>
+      <p class="label">Check it yourself</p>
+<pre><code>kubectl -n team-bravo describe oauthclient report-exporter
+kubectl -n courier-system logs deploy/courier-controller-manager | grep report-exporter</code></pre>
+    </section>
+
+    <section id="access">
+      <h2>7. Access verified</h2>
+      <p>Delivery is only half the claim. The other half is that the <em>right</em> team, and only that team, can use it. <code>deploy/phase2/check-access.sh</code> signs in to the vault as each team's test service account, exactly as a workload would, and tries to read the path.</p>
+<pre><code>$ deploy/phase2/check-access.sh team-bravo report-exporter
+request team-bravo/report-exporter is Ready; credentials at kv/teams/team-bravo/oauth-clients/team-bravo-report-exporter
+<span class="k">PASS</span>  team-alpha is denied
+<span class="k">PASS</span>  team-bravo (owner) reads the credentials
+<span class="k">PASS</span>  team-bravo credentials get a token from Authentik
+
+ACCESS CHECK PASSED</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Result</th><th>What it proves</th></tr></thead>
+          <tbody>
+            <tr><td>team-alpha is denied</td><td>Another team, signed in with a valid identity, gets HTTP 403. Access follows identity groups, not knowledge of the path.</td></tr>
+            <tr><td>team-bravo reads the credentials</td><td>The owning team's identity maps to its vault policy, and the entry is <code>state: active</code> with a secret present.</td></tr>
+            <tr><td>credentials get a token from Authentik</td><td>The secret in the vault is the live one: a <code>client_credentials</code> request with it returns HTTP 200.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="absent">
+      <h2>What never happened</h2>
+      <p>The strongest evidence is what is missing. For this request, the secret did not appear in:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Place</th><th>How we know</th></tr></thead>
+          <tbody>
+            <tr><td>The pull request or Git history</td><td>The request file has no secret field; the schema rejects unknown fields</td></tr>
+            <tr><td>CI logs and summary</td><td>The check runs before the secret exists; its summary shows only the vault path</td></tr>
+            <tr><td>ArgoCD or Kubernetes</td><td><code>OAuthClient</code> status has no secret field; <code>kubectl describe</code> shows client ID and path only</td></tr>
+            <tr><td>Controller logs</td><td>The log line above is the full record of issuing; secrets have a redacting type that prints <code>[REDACTED]</code></td></tr>
+            <tr><td>Anyone's inbox or chat</td><td>No one received it; the owning team reads it from the vault with their own identity</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="learned">
+      <h2>What we learned</h2>
+      <ul>
+        <li><strong>The label gate works as designed.</strong> It blocked a high-risk grant, told the requester exactly what was needed, and cleared itself on approval without a new commit.</li>
+        <li><strong>Branch protection is a required setup step, not optional.</strong> Without it, the check still reports but merges do not wait for code-owner review.</li>
+        <li><strong>Sync latency is ArgoCD's polling interval.</strong> Delivery itself took seconds; add an ArgoCD webhook if teams expect credentials immediately after merge.</li>
+        <li><strong>Verification must include the negative case.</strong> "The owner can read it" alone would also pass if every team could read everything.</li>
+      </ul>
+    </section>
+
+    <section id="reproduce">
+      <h2>Reproduce it</h2>
+      <ol class="seq">
+        <li><div><span class="who">requester</span><p>Add <code>requests/&lt;team&gt;/&lt;name&gt;.yaml</code> on a branch and open a pull request. See <a href="request-a-client.html">Request a client</a>.</p></div></li>
+        <li><div><span class="who">approver</span><p>For <code>client_credentials</code>, add <code>security-approved</code>; wait for <strong>Validate requests</strong> to pass; review and merge.</p></div></li>
+        <li><div><span class="who">operator</span><p>Optionally refresh the ApplicationSet, then wait for Ready:<br><code>kubectl -n &lt;team&gt; wait oauthclient/&lt;name&gt; --for=condition=Ready --timeout=180s</code></p></div></li>
+        <li><div><span class="who">operator</span><p>Prove access: <code>deploy/phase2/check-access.sh &lt;team&gt; &lt;name&gt;</code> must print <code>ACCESS CHECK PASSED</code>.</p></div></li>
+      </ol>
+    </section>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <span>Courier documentation</span>
+  <span>Source: <a href="https://github.com/paimonsoror/courier">github.com/paimonsoror/courier</a></span>
+</footer>
+
+</body>
+</html>

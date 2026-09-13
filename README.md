@@ -25,6 +25,7 @@ Open [`docs/site/index.html`](docs/site/index.html) in a browser:
 |---|---|
 | [Overview](docs/site/index.html) | Identity and security leaders: the challenge, what changes, risks and controls |
 | [How it works](docs/site/how-it-works.html) | Architects and security reviewers: components, lifecycle, trust model, failures |
+| [Walkthrough](docs/site/walkthrough.html) | Anyone evaluating: PR #1 followed from policy gate to verified access, with evidence |
 | [Request a client](docs/site/request-a-client.html) | Application teams: write a request, open the PR, read credentials |
 | [Implementation guide](docs/site/implementation.html) | Engineers: install, verify, operate, troubleshoot, harden |
 | [Reference](docs/site/reference.html) | Fields, conditions, policy, flags, vault layout, created objects |

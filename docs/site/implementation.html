@@ -17,6 +17,7 @@
   <nav class="site-nav" aria-label="Documentation">
     <a href="index.html">Overview</a>
     <a href="how-it-works.html">How it works</a>
+    <a href="walkthrough.html">Walkthrough</a>
     <a href="request-a-client.html">Request a client</a>
     <a href="implementation.html" aria-current="page">Implementation guide</a>
     <a href="reference.html">Reference</a>
@@ -213,8 +214,13 @@ deploy/phase1/acceptance.sh                    <span class="c"># must print PHAS
             <tr><td>Repository valid</td><td><code>go run ./cmd/courier validate requests</code></td><td><code>N request(s) valid</code></td></tr>
             <tr><td>Sync healthy</td><td><code>kubectl -n argocd get applications -l app.kubernetes.io/part-of=courier</code></td><td>All <code>Synced</code> and <code>Healthy</code></td></tr>
             <tr><td>Requests ready</td><td><code>kubectl get oauthclients -A</code></td><td><code>READY True</code> for every request</td></tr>
+            <tr><td>Merged request is usable by its team only</td><td><code>deploy/phase2/check-access.sh &lt;team&gt; &lt;name&gt;</code></td><td><code>ACCESS CHECK PASSED</code></td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="callout">
+        <span class="label">See it done</span>
+        <p>The <a href="walkthrough.html">walkthrough</a> follows pull request #1 through every one of these checks, with the outputs captured at the time.</p>
       </div>
     </section>
 
