@@ -1,0 +1,9 @@
+apiVersion: courier.sororlab.dev/v1alpha1
+kind: OAuthClient
+metadata:
+  labels:
+    app.kubernetes.io/name: courier
+    app.kubernetes.io/managed-by: kustomize
+  name: oauthclient-sample
+spec:
+  # TODO(user): Add fields here

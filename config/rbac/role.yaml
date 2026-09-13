@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - courier.sororlab.dev
+  resources:
+  - oauthclients
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - courier.sororlab.dev
+  resources:
+  - oauthclients/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - courier.sororlab.dev
+  resources:
+  - oauthclients/status
+  verbs:
+  - get
+  - patch
+  - update
