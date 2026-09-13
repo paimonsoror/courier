@@ -16,7 +16,9 @@ vendor/
 .vscode/
 .DS_Store
 Thumbs.db
-n## Binaries for programs and plugins
+
+# kubebuilder
+# Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
