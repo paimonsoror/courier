@@ -19,9 +19,9 @@ type events []string
 func (e *events) add(format string, args ...any) { *e = append(*e, fmt.Sprintf(format, args...)) }
 
 type fakeIDP struct {
-	log       *events
-	clients   map[string]courier.ClientRef
-	secrets   map[string]string
+	log        *events
+	clients    map[string]courier.ClientRef
+	secrets    map[string]string
 	failEnsure error
 }
 
