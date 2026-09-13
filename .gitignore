@@ -11,6 +11,11 @@ bin/
 *.out
 vendor/
 
+# Python samples
+.venv/
+__pycache__/
+*.pyc
+
 # Editors / OS
 .idea/
 .vscode/
