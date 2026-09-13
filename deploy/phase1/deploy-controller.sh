@@ -13,6 +13,12 @@ IMG="courier-controller:dev"
 cd "$repo"
 
 echo "==> build $IMG"
+# The node's ~/.docker/config.json uses a gpg-backed credential store that
+# cannot unlock in non-interactive sessions, which breaks even anonymous
+# public pulls. Build with a throwaway empty config instead.
+DOCKER_CONFIG="$(mktemp -d)"
+export DOCKER_CONFIG
+trap 'rm -rf "$DOCKER_CONFIG"' EXIT
 make docker-build IMG="$IMG"
 
 echo "==> import into k3s containerd"
