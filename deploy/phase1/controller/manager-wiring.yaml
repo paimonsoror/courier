@@ -1,7 +1,7 @@
-# The image is imported straight into k3s containerd (no registry), so never pull.
+# Pinned by digest in kustomization.yaml, so a cached copy is always correct.
 - op: add
   path: /spec/template/spec/containers/0/imagePullPolicy
-  value: Never
+  value: IfNotPresent
 - op: add
   path: /spec/template/spec/containers/0/env
   value:
