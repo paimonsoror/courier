@@ -1,0 +1,18 @@
+# Never commit real credentials or unseal material
+*.env
+*.token
+*unseal*.json
+*init*.json
+secrets/
+
+# Go (later phases)
+bin/
+*.test
+*.out
+vendor/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
