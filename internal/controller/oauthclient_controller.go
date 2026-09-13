@@ -18,46 +18,167 @@ package controller
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	courierv1alpha1 "github.com/paimonsoror/courier/api/v1alpha1"
+	"github.com/paimonsoror/courier/pkg/broker"
+	"github.com/paimonsoror/courier/pkg/courier"
+	"github.com/paimonsoror/courier/pkg/idp"
 )
 
-// OAuthClientReconciler reconciles a OAuthClient object
+const (
+	finalizerName  = "courier.sororlab.dev/cleanup"
+	conditionReady = "Ready"
+)
+
+// OAuthClientReconciler translates OAuthClient objects into broker calls.
+// All IdP and Vault logic lives in pkg/broker (ADR 0003).
 type OAuthClientReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Broker *broker.Broker
+	// ResyncPeriod re-converges Ready clients, repairing IdP-side drift.
+	ResyncPeriod time.Duration
 }
 
-// +kubebuilder:rbac:groups=courier.sororlab.dev,resources=oauthclients,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=courier.sororlab.dev,resources=oauthclients,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=courier.sororlab.dev,resources=oauthclients/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=courier.sororlab.dev,resources=oauthclients/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the OAuthClient object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.25.0/pkg/reconcile
+// Reconcile converges one OAuthClient.
 func (r *OAuthClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	var oc courierv1alpha1.OAuthClient
+	if err := r.Get(ctx, req.NamespacedName, &oc); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	spec := toClientSpec(&oc)
 
-	return ctrl.Result{}, nil
+	if !oc.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(&oc, finalizerName) {
+			return ctrl.Result{}, nil
+		}
+		if err := r.Broker.Delete(ctx, spec); err != nil {
+			r.setReady(&oc, metav1.ConditionFalse, "DeleteFailed", err.Error())
+			if uerr := r.Status().Update(ctx, &oc); uerr != nil {
+				log.Error(uerr, "update status")
+			}
+			return ctrl.Result{}, err
+		}
+		controllerutil.RemoveFinalizer(&oc, finalizerName)
+		if err := r.Update(ctx, &oc); err != nil {
+			return ctrl.Result{}, err
+		}
+		log.Info("deleted client and destroyed credentials", "client", spec.Name)
+		return ctrl.Result{}, nil
+	}
+
+	if err := validate(&oc, spec); err != nil {
+		// Nothing was created; wait for the spec to change.
+		r.setReady(&oc, metav1.ConditionFalse, "InvalidSpec", err.Error())
+		return ctrl.Result{}, r.Status().Update(ctx, &oc)
+	}
+
+	if controllerutil.AddFinalizer(&oc, finalizerName) {
+		if err := r.Update(ctx, &oc); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	res, err := r.Broker.Ensure(ctx, spec, broker.Prior{Delivered: oc.Status.CredentialsDelivered})
+	oc.Status.ObservedGeneration = oc.Generation
+	oc.Status.IdentityProvider = r.Broker.IDP.Name()
+	if res.Path != "" {
+		oc.Status.SecretPath = res.Path
+	}
+	if err != nil {
+		reason := "ReconcileFailed"
+		if errors.Is(err, idp.ErrNotManaged) {
+			reason = "NameConflict"
+		}
+		r.setReady(&oc, metav1.ConditionFalse, reason, err.Error())
+		if uerr := r.Status().Update(ctx, &oc); uerr != nil {
+			log.Error(uerr, "update status")
+		}
+		if reason == "NameConflict" {
+			return ctrl.Result{}, nil // retrying cannot fix a name owned by someone else
+		}
+		return ctrl.Result{}, err
+	}
+
+	oc.Status.ClientID = res.Ref.ClientID
+	oc.Status.CredentialsDelivered = true
+	if res.SecretIssued {
+		now := metav1.Now()
+		oc.Status.LastSecretIssued = &now
+		log.Info("issued credentials", "client", spec.Name, "clientId", res.Ref.ClientID, "path", res.Path)
+	}
+	r.setReady(&oc, metav1.ConditionTrue, "Delivered", fmt.Sprintf("credentials are available at %s", res.Path))
+	if err := r.Status().Update(ctx, &oc); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: r.ResyncPeriod}, nil
+}
+
+// toClientSpec maps the CR onto the core spec. The IdP-side name is
+// <namespace>-<name> so two teams can reuse a resource name without colliding.
+func toClientSpec(oc *courierv1alpha1.OAuthClient) courier.ClientSpec {
+	owner := oc.Spec.OwnerGroup
+	if owner == "" {
+		owner = oc.Namespace
+	}
+	display := oc.Spec.DisplayName
+	if display == "" {
+		display = oc.Namespace + "/" + oc.Name
+	}
+	return courier.ClientSpec{
+		Name:         oc.Namespace + "-" + oc.Name,
+		DisplayName:  display,
+		OwnerGroup:   owner,
+		Type:         courier.ClientType(oc.Spec.ClientType),
+		GrantTypes:   oc.Spec.GrantTypes,
+		RedirectURIs: oc.Spec.RedirectURIs,
+		Scopes:       oc.Spec.Scopes,
+		AllowGroups:  oc.Spec.AllowGroups,
+	}
+}
+
+// validate enforces tenancy (a namespace can only request clients for its own
+// group) plus the core spec rules.
+func validate(oc *courierv1alpha1.OAuthClient, spec courier.ClientSpec) error {
+	if spec.OwnerGroup != oc.Namespace {
+		return fmt.Errorf("ownerGroup %q must match the namespace %q", spec.OwnerGroup, oc.Namespace)
+	}
+	return spec.Normalize().Validate()
+}
+
+func (r *OAuthClientReconciler) setReady(oc *courierv1alpha1.OAuthClient, status metav1.ConditionStatus, reason, msg string) {
+	meta.SetStatusCondition(&oc.Status.Conditions, metav1.Condition{
+		Type:               conditionReady,
+		Status:             status,
+		Reason:             reason,
+		Message:            msg,
+		ObservedGeneration: oc.Generation,
+	})
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OAuthClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&courierv1alpha1.OAuthClient{}).
+		For(&courierv1alpha1.OAuthClient{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named("oauthclient").
 		Complete(r)
 }

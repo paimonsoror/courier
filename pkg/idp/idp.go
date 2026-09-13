@@ -3,9 +3,14 @@ package idp
 
 import (
 	"context"
+	"errors"
 
 	"github.com/paimonsoror/courier/pkg/courier"
 )
+
+// ErrNotManaged means a client with the requested name exists in the IdP but
+// Courier did not create it. Adapters wrap it; callers use errors.Is.
+var ErrNotManaged = errors.New("client exists but is not managed by Courier")
 
 // Provider creates and manages OAuth clients in one identity provider.
 // Implementations must be idempotent: calling EnsureClient twice with the same

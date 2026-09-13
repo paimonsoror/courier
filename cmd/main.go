@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -37,6 +38,9 @@ import (
 
 	courierv1alpha1 "github.com/paimonsoror/courier/api/v1alpha1"
 	"github.com/paimonsoror/courier/internal/controller"
+	"github.com/paimonsoror/courier/pkg/broker"
+	"github.com/paimonsoror/courier/pkg/idp/authentik"
+	"github.com/paimonsoror/courier/pkg/secretstore/vault"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -44,6 +48,13 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 )
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -63,6 +74,19 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	var idpName, authentikURL, groupsMapping string
+	var vaultAddr, vaultMount, vaultAuthMount, vaultRole string
+	var resyncPeriod time.Duration
+	flag.StringVar(&idpName, "idp-name", envOr("COURIER_IDP_NAME", "authentik"), "Name of the identity provider adapter instance.")
+	flag.StringVar(&authentikURL, "authentik-url", os.Getenv("AUTHENTIK_URL"), "Authentik base URL. The API token is read from AUTHENTIK_TOKEN.")
+	flag.StringVar(&groupsMapping, "authentik-groups-mapping", envOr("AUTHENTIK_GROUPS_MAPPING", "oauth-groups"),
+		"Authentik scope mapping name that emits the groups claim.")
+	flag.StringVar(&vaultAddr, "vault-addr", os.Getenv("VAULT_ADDR"), "Vault address.")
+	flag.StringVar(&vaultMount, "vault-kv-mount", envOr("VAULT_KV_MOUNT", "kv"), "KV v2 mount for credentials.")
+	flag.StringVar(&vaultAuthMount, "vault-auth-mount", envOr("VAULT_AUTH_MOUNT", "kubernetes"), "Vault Kubernetes auth mount.")
+	flag.StringVar(&vaultRole, "vault-role", envOr("VAULT_ROLE", "courier"),
+		"Vault Kubernetes auth role. Ignored when VAULT_TOKEN is set.")
+	flag.DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "How often Ready clients are re-converged.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -182,9 +206,35 @@ func main() {
 		os.Exit(1)
 	}
 
+	if authentikURL == "" || os.Getenv("AUTHENTIK_TOKEN") == "" || vaultAddr == "" {
+		setupLog.Error(nil, "AUTHENTIK_URL, AUTHENTIK_TOKEN and VAULT_ADDR are required")
+		os.Exit(1)
+	}
+	idpProvider, err := authentik.New(authentik.Config{
+		Name:          idpName,
+		BaseURL:       authentikURL,
+		Token:         os.Getenv("AUTHENTIK_TOKEN"),
+		ScopeMappings: map[string]string{"groups": groupsMapping},
+	})
+	if err != nil {
+		setupLog.Error(err, "Failed to configure identity provider")
+		os.Exit(1)
+	}
+	var vaultTokens vault.TokenSource = &vault.KubernetesAuth{Addr: vaultAddr, Mount: vaultAuthMount, Role: vaultRole}
+	if t := os.Getenv("VAULT_TOKEN"); t != "" {
+		vaultTokens = vault.StaticToken(t)
+	}
+	credentialBroker := &broker.Broker{
+		IDP:       idpProvider,
+		Store:     &vault.Store{Addr: vaultAddr, Mount: vaultMount, Tokens: vaultTokens},
+		ManagedBy: "courier-controller",
+	}
+
 	if err := (&controller.OAuthClientReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Broker:       credentialBroker,
+		ResyncPeriod: resyncPeriod,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "oauthclient")
 		os.Exit(1)

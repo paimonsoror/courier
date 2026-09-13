@@ -28,7 +28,7 @@ var _ idp.Provider = (*Provider)(nil)
 
 // ErrNotManaged means an application with the requested slug exists but
 // Courier did not create it.
-var ErrNotManaged = errors.New("application exists but is not managed by Courier")
+var ErrNotManaged = idp.ErrNotManaged
 
 const managedMarker = "managed-by: courier"
 

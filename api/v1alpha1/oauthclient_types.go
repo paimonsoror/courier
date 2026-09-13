@@ -21,38 +21,73 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// OAuthClientSpec defines the desired state of OAuthClient
+// OAuthClientSpec is a request for an OAuth client owned by the team whose
+// namespace it lives in.
+// +kubebuilder:validation:XValidation:rule="self.clientType == 'confidential' || !self.grantTypes.exists(g, g == 'client_credentials')",message="client_credentials requires clientType confidential"
+// +kubebuilder:validation:XValidation:rule="!self.grantTypes.exists(g, g == 'authorization_code') || (has(self.redirectUris) && size(self.redirectUris) > 0)",message="authorization_code requires at least one redirect URI"
 type OAuthClientSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of OAuthClient. Edit oauthclient_types.go to remove/update
+	// displayName is shown in the identity provider. Defaults to <namespace>/<name>.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+
+	// ownerGroup is the IdP group that owns the client and can read its
+	// credentials. It must equal the namespace; empty means the namespace.
+	// +optional
+	OwnerGroup string `json:"ownerGroup,omitempty"`
+
+	// clientType is public (PKCE, no secret) or confidential (secret delivered to Vault).
+	// +kubebuilder:validation:Enum=public;confidential
+	ClientType string `json:"clientType"`
+
+	// grantTypes the client may use.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:Enum=authorization_code;refresh_token;client_credentials
+	// +listType=set
+	GrantTypes []string `json:"grantTypes"`
+
+	// redirectUris must be https, except http loopback for public clients.
+	// +optional
+	// +listType=set
+	RedirectURIs []string `json:"redirectUris,omitempty"`
+
+	// scopes requested by the client. Defaults to [openid].
+	// +optional
+	// +listType=set
+	Scopes []string `json:"scopes,omitempty"`
+
+	// allowGroups may sign in through the client. Defaults to the owner group.
+	// +optional
+	// +listType=set
+	AllowGroups []string `json:"allowGroups,omitempty"`
 }
 
-// OAuthClientStatus defines the observed state of OAuthClient.
+// OAuthClientStatus reports what Courier delivered. It never contains the secret.
 type OAuthClientStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// observedGeneration is the spec generation last reconciled.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// identityProvider is the adapter that manages the client.
+	// +optional
+	IdentityProvider string `json:"identityProvider,omitempty"`
 
-	// conditions represent the current state of the OAuthClient resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// clientId of the client in the identity provider. Not sensitive.
+	// +optional
+	ClientID string `json:"clientId,omitempty"`
+
+	// secretPath is where the owning team reads the credentials.
+	// +optional
+	SecretPath string `json:"secretPath,omitempty"`
+
+	// credentialsDelivered is true once credentials were stored and are live.
+	// +optional
+	CredentialsDelivered bool `json:"credentialsDelivered,omitempty"`
+
+	// lastSecretIssued is when Courier last generated a client secret.
+	// +optional
+	LastSecretIssued *metav1.Time `json:"lastSecretIssued,omitempty"`
+
+	// conditions: Ready is True when the client exists and credentials are available.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,8 +96,15 @@ type OAuthClientStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=oac
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.clientType`
+// +kubebuilder:printcolumn:name="Client ID",type=string,JSONPath=`.status.clientId`
+// +kubebuilder:printcolumn:name="Secret Path",type=string,JSONPath=`.status.secretPath`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// OAuthClient is the Schema for the oauthclients API
+// OAuthClient requests an OAuth client in the identity provider, with its
+// credentials delivered to the owning team's Vault path.
 type OAuthClient struct {
 	metav1.TypeMeta `json:",inline"`
 
