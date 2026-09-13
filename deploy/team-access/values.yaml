@@ -1,0 +1,10 @@
+# Team (namespace, IdP group and Vault Kubernetes auth role all share this name).
+# Set by the courier-team-access ApplicationSet from the requests/<team> directory.
+team: ""
+
+serviceAccountName: courier-secrets
+
+vault:
+  server: http://vault-active.vault.svc:8200
+  kvMount: kv
+  authMount: kubernetes

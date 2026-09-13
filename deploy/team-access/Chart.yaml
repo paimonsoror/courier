@@ -1,0 +1,7 @@
+apiVersion: v2
+name: courier-team-access
+description: >-
+  Per-team Vault connection for External Secrets: a service account and a
+  SecretStore that can read only the team's Courier credentials.
+type: application
+version: 0.1.0
