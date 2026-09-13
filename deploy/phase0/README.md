@@ -12,7 +12,7 @@ can read a team's secrets in Vault, for both humans (OIDC) and machines (JWT).
 | Authentik provider + app `vault` | auth.sororlab.dev | confidential; grants: authorization_code, refresh_token, client_credentials |
 | IdP groups | Authentik | `vault-admins`, `team-alpha`, `team-bravo` |
 | Test identities | Authentik service accounts | `courier-svc-alpha` (team-alpha), `courier-svc-bravo` (team-bravo) |
-| Vault auth | `oidc/` role `human`, `jwt/` role `machine` | `groups` claim → external identity groups |
+| Vault auth | one `oidc/` mount: role `human` (oidc), role `machine` (jwt) | `groups` claim → external identity groups (one alias each) |
 | Vault policies | `vault-admin`, `team-alpha`, `team-bravo`, `courier` | `courier` is write-only (no read) |
 | Sample secrets | `kv/teams/<team>/oauth-clients/phase0-sample` | fake values |
 
@@ -61,6 +61,14 @@ OIDC as a member of `team-alpha`, then open `kv/teams/team-alpha/`.
    `Sealed false` with nobody entering keys.
 
 ## Findings
+
+- **A Vault external identity group holds only one alias.** The first
+  version used separate `oidc/` (humans) and `jwt/` (machines) mounts and
+  created an alias on each. The second alias silently replaced the first, so
+  machine logins mapped to groups but human OIDC logins did not, and `verify.sh`
+  (machines only) still passed. Fix: one JWT/OIDC mount carrying both role
+  types. Re-running `vault-bootstrap.sh` migrates an existing install by
+  disabling `jwt/`.
 
 - **Authentik 2026.x requires an explicit `grant_types` list on OAuth2
   providers.** An empty list rejects `client_credentials` with

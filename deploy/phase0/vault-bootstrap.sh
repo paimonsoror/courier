@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Phase 0: initialize Vault (AWS KMS auto-unseal) and configure:
 #   - KV v2 at kv/, file audit device
-#   - OIDC auth (humans, browser/CLI) and JWT auth (machines) against Authentik
+#   - one oidc/ auth mount against Authentik: role human (browser/CLI) and
+#     role machine (JWT from client_credentials)
 #   - policies: vault-admin, team-alpha, team-bravo, courier (write-only)
 #   - external identity groups + aliases on both auth mounts
 #   - one sample secret per team
@@ -50,8 +51,14 @@ v secrets list -format=json | grep -q '"kv/"' || v secrets enable -path=kv kv-v2
 v audit list -format=json | grep -q '"file/"' || v audit enable file file_path=/vault/audit/audit.log
 
 echo "==> auth methods"
+# One JWT/OIDC mount serves humans (role_type=oidc) and machines (role_type=jwt).
+# An external identity group accepts only ONE alias, so a second mount would
+# silently take the group mapping away from the first.
 v auth list -format=json | grep -q '"oidc/"' || v auth enable oidc
-v auth list -format=json | grep -q '"jwt/"'  || v auth enable jwt
+if v auth list -format=json | grep -q '"jwt/"'; then
+  echo "    migrating: disabling separate jwt/ mount (it held the only group aliases)"
+  v auth disable jwt
+fi
 
 ISSUER="$(kubectl -n "$NS" get secret vault-oidc -o jsonpath='{.data.issuer}' | base64 -d)"
 CLIENT_ID="$(kubectl -n "$NS" get secret vault-oidc -o jsonpath='{.data.client_id}' | base64 -d)"
@@ -73,8 +80,7 @@ v write auth/oidc/role/human \
   token_policies=default \
   token_ttl=1h
 
-v write auth/jwt/config oidc_discovery_url="$ISSUER" bound_issuer="$ISSUER"
-v write auth/jwt/role/machine \
+v write auth/oidc/role/machine \
   role_type=jwt \
   user_claim=preferred_username \
   groups_claim=groups \
@@ -120,19 +126,16 @@ HCL
 echo "==> identity groups and aliases"
 accessor() { v auth list -format=json | json_get "[\"$1/\"][\"accessor\"]"; }
 OIDC_ACC="$(accessor oidc)"
-JWT_ACC="$(accessor jwt)"
 
 for pair in vault-admins:vault-admin team-alpha:team-alpha team-bravo:team-bravo; do
   group="${pair%%:*}"; policy="${pair##*:}"
   v write identity/group name="$group" type=external policies="$policy" >/dev/null
   gid="$(v read -field=id "identity/group/name/$group")"
-  for acc in "$OIDC_ACC" "$JWT_ACC"; do
-    existing="$(v write -format=json identity/lookup/group alias_name="$group" alias_mount_accessor="$acc" 2>/dev/null || true)"
-    if [ -z "$existing" ]; then
-      v write identity/group-alias name="$group" mount_accessor="$acc" canonical_id="$gid" >/dev/null
-      echo "    alias $group -> $acc"
-    fi
-  done
+  existing="$(v write -format=json identity/lookup/group alias_name="$group" alias_mount_accessor="$OIDC_ACC" 2>/dev/null || true)"
+  if [ -z "$existing" ]; then
+    v write identity/group-alias name="$group" mount_accessor="$OIDC_ACC" canonical_id="$gid" >/dev/null
+    echo "    alias $group -> $OIDC_ACC"
+  fi
 done
 
 echo "==> sample secrets"
