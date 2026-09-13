@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Courier Works</title>
+<meta name="description" content="Courier's components, request lifecycle, trust model, identity-to-vault access mapping and failure handling.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/courier.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Courier <small>OAuth client delivery</small></a>
+  <nav class="site-nav" aria-label="Documentation">
+    <a href="index.html">Overview</a>
+    <a href="how-it-works.html" aria-current="page">How it works</a>
+    <a href="request-a-client.html">Request a client</a>
+    <a href="implementation.html">Implementation guide</a>
+    <a href="reference.html">Reference</a>
+  </nav>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="On this page">
+    <p>On this page</p>
+    <ol>
+      <li><a href="#components">Components</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#lifecycle">Request lifecycle</a></li>
+      <li><a href="#changes">Changes and removal</a></li>
+      <li><a href="#trust">Trust model</a></li>
+      <li><a href="#access">Identity to vault</a></li>
+      <li><a href="#failures">Failure handling</a></li>
+      <li><a href="#boundaries">Deliberate limits</a></li>
+      <li><a href="#decisions">Design decisions</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="doc">
+      <div class="meta">
+        <span class="audience">Architects and security reviewers</span>
+        <span>Reference environment <b>Authentik 2026.8 · Vault CE 2.0 · k3s · ArgoCD</b></span>
+      </div>
+      <h1>How Courier works</h1>
+      <p class="lede">Courier connects four systems your organization already trusts: Git for intent and approval, the identity provider for clients and groups, a vault for secrets, and Kubernetes for the automation that keeps them in step. This page explains what each piece does, what it is allowed to do, and what happens when something fails.</p>
+    </header>
+
+    <section id="components">
+      <h2>Components</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Component</th><th>Role</th><th>Where it lives</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Request repository</strong></td><td>One YAML file per client at <code>requests/&lt;team&gt;/&lt;name&gt;.yaml</code>; the policy file sets organization rules</td><td>GitHub, <code>requests/</code></td></tr>
+            <tr><td><strong>Validation check</strong></td><td><code>courier validate</code> runs on every pull request, annotates problems and posts a reviewer summary</td><td>GitHub Actions, <code>.github/workflows/requests.yml</code></td></tr>
+            <tr><td><strong>Code owners</strong></td><td>Decide who must approve each team's requests and any policy change</td><td><code>.github/CODEOWNERS</code> plus branch protection</td></tr>
+            <tr><td><strong>Sync</strong></td><td>One ArgoCD application per team directory; a locked project allows only <code>OAuthClient</code> objects in <code>team-*</code> namespaces</td><td>ArgoCD, <code>deploy/argocd/</code></td></tr>
+            <tr><td><strong>Controller</strong></td><td>Turns each <code>OAuthClient</code> into an IdP client plus stored credentials, and reports status</td><td>Kubernetes namespace <code>courier-system</code></td></tr>
+            <tr><td><strong>Core library</strong></td><td>All IdP and vault logic, including the ordered write; no Kubernetes dependency, so a CLI or CI job can reuse it</td><td><code>pkg/</code></td></tr>
+            <tr><td><strong>Identity provider</strong></td><td>Holds the OAuth client and the groups that may use it and read its secret</td><td>Authentik (Okta adapter planned)</td></tr>
+            <tr><td><strong>Vault</strong></td><td>The only place a client secret is stored; access granted by identity group</td><td>Vault CE, KV v2 mount <code>kv/</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <h2>Architecture</h2>
+      <div class="flow" style="--stages:5" role="img" aria-label="Pull request with validation and code owners, merge synced by ArgoCD, controller writes vault and creates the IdP client, team reads the vault using IdP group membership">
+        <div class="stage">
+          <span class="label">Git</span>
+          <h4>Pull request</h4>
+          <div class="node"><b>Request file</b><small>requests/team-alpha/billing-sync.yaml</small></div>
+          <div class="node"><b>courier validate</b><small>same rules as the controller</small></div>
+        </div>
+        <div class="stage">
+          <span class="label">Approve</span>
+          <h4>Merge</h4>
+          <div class="node"><b>Code owners</b><small>team lead; identity for policy</small></div>
+          <div class="node"><b>Approval label</b><small>for sensitive grants</small></div>
+        </div>
+        <div class="stage">
+          <span class="label">Sync</span>
+          <h4>ArgoCD</h4>
+          <div class="node"><b>Team application</b><small>OAuthClient into namespace team-alpha</small></div>
+        </div>
+        <div class="stage">
+          <span class="label">Deliver</span>
+          <h4>Controller</h4>
+          <div class="node secret"><b>Vault write</b><small>pending, then active</small></div>
+          <div class="node"><b>IdP client</b><small>provider, application, group bindings</small></div>
+        </div>
+        <div class="stage">
+          <span class="label">Consume</span>
+          <h4>Team</h4>
+          <div class="node"><b>People</b><small>vault login via OIDC</small></div>
+          <div class="node"><b>Workloads</b><small>JWT or Kubernetes auth</small></div>
+        </div>
+      </div>
+      <p class="flow-caption">Amber marks the only place a secret is written. Status visible to anyone with access to the request never contains it.</p>
+    </section>
+
+    <section id="lifecycle">
+      <h2>Request lifecycle</h2>
+      <p>What happens between a team opening a pull request and reading its credentials. The order matters: steps 7 to 9 are arranged so a failure can never leave a working secret that is not stored.</p>
+      <ol class="seq">
+        <li><div><span class="who">requester</span><p>Adds <code>requests/team-alpha/billing-sync.yaml</code> and opens a pull request.</p></div></li>
+        <li><div><span class="who">GitHub Actions</span><p><code>courier validate</code> checks layout, object type, fields, the owner group, grant and redirect rules, redirect hosts and approval labels, then writes a summary table for reviewers.</p></div></li>
+        <li><div><span class="who">code owners</span><p>A team-alpha code owner approves. Because the request uses <code>client_credentials</code>, the <code>security-approved</code> label is also required.</p></div></li>
+        <li><div><span class="who">GitHub</span><p>Branch protection allows the merge once the check passes and the required reviews are in.</p></div></li>
+        <li><div><span class="who">ArgoCD</span><p>The team's application syncs the file into namespace <code>team-alpha</code>. The project rejects anything that is not an <code>OAuthClient</code>.</p></div></li>
+        <li><div><span class="who">controller</span><p>Re-applies the same validation, adds a cleanup finalizer and looks up <code>team-alpha-billing-sync</code> in the IdP.</p></div></li>
+        <li><div><span class="who">controller → vault</span><p>Generates a 64-character secret in memory and writes it to <code>kv/teams/team-alpha/oauth-clients/team-alpha-billing-sync</code> with <code>state: pending</code>.</p></div></li>
+        <li><div><span class="who">controller → IdP</span><p>Creates the OAuth provider with that secret and the allowed grant types, the application (marked as managed by Courier), and a binding that lets only <code>team-alpha</code> use it.</p></div></li>
+        <li><div><span class="who">controller → vault</span><p>Patches the entry to <code>state: active</code> with the <code>client_id</code> and endpoints, without reading or resending the secret.</p></div></li>
+        <li><div><span class="who">controller</span><p>Sets <code>Ready=True</code> with the client ID and vault path in the object's status.</p></div></li>
+        <li><div><span class="who">team-alpha member</span><p>Signs in to vault with their normal identity and reads the credentials, or a workload does the same with its own identity.</p></div></li>
+      </ol>
+    </section>
+
+    <section id="changes">
+      <h2>Changes and removal</h2>
+      <div class="two">
+        <div class="panel">
+          <h3>Changing a request</h3>
+          <p>A merged edit (for example a new redirect URI or scope) updates the IdP client in place and refreshes the non-secret fields in the vault. The secret stays the same, so running workloads are not disrupted.</p>
+        </div>
+        <div class="panel">
+          <h3>Removing a request</h3>
+          <p>Deleting the file prunes the object. The controller deletes the IdP client <em>first</em>, so the credentials stop working, and then destroys every stored version of the secret. The object disappears only after both succeed.</p>
+        </div>
+      </div>
+      <p>Every few minutes the controller also re-applies each ready request, which restores settings someone changed by hand in the IdP console.</p>
+    </section>
+
+    <section id="trust">
+      <h2>Trust model</h2>
+      <p>Each actor holds only the permissions its step needs. The right-hand column matters as much as the middle one.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Actor</th><th>Can</th><th>Cannot</th></tr></thead>
+          <tbody>
+            <tr><td>Requester</td><td>Propose a client for their team</td><td>Merge without approval; target another team's group or vault path</td></tr>
+            <tr><td>Team code owner</td><td>Approve their team's requests</td><td>Change the policy file or pipelines (identity team owns those)</td></tr>
+            <tr><td>CI check</td><td>Read the repository and report</td><td>Write anywhere; it holds no credentials</td></tr>
+            <tr><td>ArgoCD (requests project)</td><td>Create <code>OAuthClient</code> objects in <code>team-*</code> namespaces</td><td>Create any other kind of object, or deploy to other namespaces</td></tr>
+            <tr><td>Controller (vault)</td><td>Create, update, patch and delete under <code>kv/teams/+/oauth-clients/</code></td><td>Read any secret, including ones it wrote</td></tr>
+            <tr><td>Controller (IdP)</td><td>Manage OAuth providers, applications and bindings; view flows, groups, keys and scope mappings</td><td>Manage users, change group membership, alter login flows; modify apps it did not create</td></tr>
+            <tr><td>Team member</td><td>Read their own team's vault path</td><td>Read another team's path</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout secret">
+        <span class="label">Where the secret exists</span>
+        <p>In the controller's memory between generation and the vault write, in the vault, and in the IdP (which must know it to validate the client). Never in Git, in Kubernetes objects, in CI logs or in controller logs.</p>
+      </div>
+    </section>
+
+    <section id="access">
+      <h2>From identity group to vault access</h2>
+      <p>Vault trusts the same identity provider. When someone signs in, the token's <code>groups</code> claim decides which vault policies they receive.</p>
+      <pre><code><span class="c"># IdP group            vault identity group      vault policy        grants</span>
+team-alpha      →   team-alpha      (oidc/)  →  team-alpha    →  read kv/teams/team-alpha/*
+                    team-alpha-jwt  (jwt/)   →  team-alpha</code></pre>
+      <p>People sign in through the <code>oidc/</code> method (browser or CLI). Workloads present a JWT from the identity provider through <code>jwt/</code>, or use Kubernetes service-account login.</p>
+      <div class="callout">
+        <span class="label">Why each group appears twice</span>
+        <p>A vault external identity group can hold only one alias, and a single auth mount cannot serve both browser logins and machine JWTs. So each IdP group maps to one vault group per login method, both carrying the same policy. Getting this wrong fails silently: one login method loses its group access while the other keeps working.</p>
+      </div>
+    </section>
+
+    <section id="failures">
+      <h2>Failure handling</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>What fails</th><th>What happens</th><th>What recovers it</th></tr></thead>
+          <tbody>
+            <tr><td>Vault unavailable before the pending write</td><td>Nothing is created in the IdP; status shows <code>ReconcileFailed</code></td><td>Automatic retry with back-off</td></tr>
+            <tr><td>IdP unavailable after the pending write</td><td>A <code>pending</code> entry exists; no client exists</td><td>Retry generates a new secret, overwrites the pending entry, creates the client</td></tr>
+            <tr><td>Controller stops between IdP create and promotion</td><td>The IdP uses the secret; the vault holds it as <code>pending</code></td><td>Next reconcile rotates to a fresh secret and completes delivery</td></tr>
+            <tr><td>Status is lost (object recreated)</td><td>Courier cannot confirm delivery</td><td>It issues a new secret rather than trust an unknown state</td></tr>
+            <tr><td>Name already used by a hand-built app</td><td><code>Ready=False</code>, reason <code>NameConflict</code>; nothing modified</td><td>Rename the request or retire the old app</td></tr>
+            <tr><td>An invalid request reaches the cluster</td><td>The schema rejects it, or status shows <code>InvalidSpec</code>; nothing created</td><td>Fix the request in a new pull request</td></tr>
+            <tr><td>Vault pod restarts</td><td>Brief unavailability</td><td>Automatic unseal through the cloud key; no operator action</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="boundaries">
+      <h2>What Courier deliberately does not do</h2>
+      <ul>
+        <li>Replace the identity provider's user and group management. Team membership stays where it is today.</li>
+        <li>Broker tokens at runtime. Applications talk to the identity provider directly.</li>
+        <li>Run a public dynamic client registration endpoint.</li>
+        <li>Manage SAML applications.</li>
+        <li>Store secrets anywhere except the vault.</li>
+      </ul>
+    </section>
+
+    <section id="decisions">
+      <h2>Design decisions</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Decision</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td><a href="https://github.com/paimonsoror/courier/blob/main/docs/adr/0001-vault-ce-for-proof-of-value.md">Vault Community Edition for the proof of value</a></td><td>Matches the vault many organizations already run; only Community Edition features are used, and OpenBao remains compatible</td></tr>
+            <tr><td><a href="https://github.com/paimonsoror/courier/blob/main/docs/adr/0002-controller-not-terraform.md">A controller, not Terraform</a></td><td>Terraform state would become a second copy of every secret</td></tr>
+            <tr><td><a href="https://github.com/paimonsoror/courier/blob/main/docs/adr/0003-core-library-thin-controller.md">Kubernetes-free core, thin controller</a></td><td>Adopters without Kubernetes can reuse the same logic from a CLI or CI job</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <span>Courier documentation</span>
+  <span>Source: <a href="https://github.com/paimonsoror/courier">github.com/paimonsoror/courier</a></span>
+</footer>
+
+</body>
+</html>

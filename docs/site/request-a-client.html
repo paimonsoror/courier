@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Request an OAuth Client</title>
+<meta name="description" content="Step-by-step guide for application teams: choose a client type, write a request, open the pull request, and read your credentials from the vault.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/courier.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Courier <small>OAuth client delivery</small></a>
+  <nav class="site-nav" aria-label="Documentation">
+    <a href="index.html">Overview</a>
+    <a href="how-it-works.html">How it works</a>
+    <a href="request-a-client.html" aria-current="page">Request a client</a>
+    <a href="implementation.html">Implementation guide</a>
+    <a href="reference.html">Reference</a>
+  </nav>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="On this page">
+    <p>On this page</p>
+    <ol>
+      <li><a href="#before">Before you start</a></li>
+      <li><a href="#type">Choose a client type</a></li>
+      <li><a href="#write">Write the request</a></li>
+      <li><a href="#pr">Open the pull request</a></li>
+      <li><a href="#after-merge">After merge</a></li>
+      <li><a href="#read">Read your credentials</a></li>
+      <li><a href="#change">Change or retire</a></li>
+      <li><a href="#faq">Questions</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="doc">
+      <div class="meta">
+        <span class="audience">Application teams</span>
+        <span>Time to first credentials <b>about 10 minutes plus review</b></span>
+      </div>
+      <h1>Request an OAuth client</h1>
+      <p class="lede">You describe the client you need in a small file and open a pull request. Once it is approved and merged, Courier creates the client and places its credentials where only your team can read them. You never receive a secret by email or chat.</p>
+    </header>
+
+    <section id="before">
+      <h2>Before you start</h2>
+      <ul>
+        <li><strong>Your team directory.</strong> Requests live under <code>requests/&lt;team&gt;/</code>, for example <code>requests/team-alpha/</code>. The directory name is also your identity-provider group. If your team has no directory yet, ask the identity team to add one along with its code owners.</li>
+        <li><strong>Group membership.</strong> Anyone who should read the credentials must be in that group in the identity provider.</li>
+        <li><strong>Your redirect URIs</strong> (for sign-in flows), on an approved domain such as <code>*.sororlab.dev</code>.</li>
+      </ul>
+    </section>
+
+    <section id="type">
+      <h2>Choose a client type</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>You are building</th><th>Client type</th><th>Grant types</th><th>Gets a secret</th></tr></thead>
+          <tbody>
+            <tr><td>A web app or MCP server that signs users in</td><td><code>confidential</code></td><td><code>authorization_code</code>, optionally <code>refresh_token</code></td><td><span class="pill p-secret">yes</span></td></tr>
+            <tr><td>A backend job or service calling APIs as itself</td><td><code>confidential</code></td><td><code>client_credentials</code> <span class="pill p-accent">needs approval label</span></td><td><span class="pill p-secret">yes</span></td></tr>
+            <tr><td>A desktop app, CLI, IDE plugin or single-page app</td><td><code>public</code></td><td><code>authorization_code</code> with PKCE</td><td><span class="pill p-good">no</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>If you are unsure, pick <code>confidential</code> for anything that runs on a server and <code>public</code> for anything installed on a user's device.</p>
+    </section>
+
+    <section id="write">
+      <h2>Write the request</h2>
+      <p>Create <code>requests/&lt;team&gt;/&lt;name&gt;.yaml</code>. The file name must match <code>metadata.name</code>, and <code>metadata.namespace</code> must match your team directory.</p>
+
+      <h3>A service that signs users in</h3>
+<pre><code><span class="c"># requests/team-alpha/orders-portal.yaml</span>
+<span class="k">apiVersion</span>: courier.sororlab.dev/v1alpha1
+<span class="k">kind</span>: OAuthClient
+<span class="k">metadata</span>:
+  <span class="k">name</span>: orders-portal
+  <span class="k">namespace</span>: team-alpha
+<span class="k">spec</span>:
+  <span class="k">displayName</span>: "Orders portal"
+  <span class="k">clientType</span>: confidential
+  <span class="k">grantTypes</span>: [authorization_code, refresh_token]
+  <span class="k">redirectUris</span>:
+    - https://orders.sororlab.dev/oauth/callback
+  <span class="k">scopes</span>: [openid, profile, email, offline_access]</code></pre>
+
+      <h3>A machine-to-machine job</h3>
+<pre><code><span class="c"># requests/team-alpha/billing-sync.yaml</span>
+<span class="k">apiVersion</span>: courier.sororlab.dev/v1alpha1
+<span class="k">kind</span>: OAuthClient
+<span class="k">metadata</span>:
+  <span class="k">name</span>: billing-sync
+  <span class="k">namespace</span>: team-alpha
+<span class="k">spec</span>:
+  <span class="k">clientType</span>: confidential
+  <span class="k">grantTypes</span>: [client_credentials]
+  <span class="k">scopes</span>: [openid, profile, groups]</code></pre>
+
+      <p>Optional fields: <code>allowGroups</code> lets additional groups sign in through the client (it defaults to your team). The full list is in the <a href="reference.html#oauthclient">reference</a>.</p>
+
+      <h3>Check it locally (optional)</h3>
+<pre><code>go run ./cmd/courier validate requests
+<span class="c"># 3 request(s) valid</span></code></pre>
+    </section>
+
+    <section id="pr">
+      <h2>Open the pull request</h2>
+      <ol class="seq">
+        <li><div><span class="who">you</span><p>Push a branch and open a pull request against <code>main</code>.</p></div></li>
+        <li><div><span class="who">check</span><p><strong>Client requests / Validate requests</strong> runs. Problems appear as annotations on the exact file, and the run summary shows a table of what will change.</p></div></li>
+        <li><div><span class="who">you</span><p>Fix anything flagged and push again. The check re-runs automatically.</p></div></li>
+        <li><div><span class="who">approvers</span><p>Your team's code owner reviews. If the request uses <code>client_credentials</code>, the identity or security team adds the <code>security-approved</code> label; the check re-runs when the label is added.</p></div></li>
+        <li><div><span class="who">you</span><p>Merge once the check is green and approvals are in.</p></div></li>
+      </ol>
+
+      <p class="label">Example check summary</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Change</th><th>Team</th><th>Client</th><th>Type</th><th>Grants</th><th>Credentials path</th><th>Approval</th></tr></thead>
+          <tbody>
+            <tr><td>added or changed</td><td>team-alpha</td><td><code>billing-sync</code></td><td>confidential</td><td>client_credentials</td><td><code>kv/teams/team-alpha/oauth-clients/team-alpha-billing-sync</code></td><td>needs label <code>security-approved</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Common check messages</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Message</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td><code>metadata.name "x" must match the file name "y"</code></td><td>Rename the file or the object so they match</td></tr>
+            <tr><td><code>metadata.namespace "x" must be the team directory "y"</code></td><td>Set <code>namespace</code> to your team directory name</td></tr>
+            <tr><td><code>redirect URI ...: must use https</code></td><td>Use https; plain http is only allowed for <code>localhost</code> on public clients</td></tr>
+            <tr><td><code>redirect URI host "x" is not in allowedRedirectHosts</code></td><td>Use an approved domain, or ask the identity team to extend the policy</td></tr>
+            <tr><td><code>client_credentials requires a confidential client</code></td><td>Change <code>clientType</code> to <code>confidential</code></td></tr>
+            <tr><td><code>needs the "security-approved" label</code></td><td>Ask the identity or security team to review and add the label</td></tr>
+            <tr><td><code>invalid OAuthClient: unknown field</code></td><td>A field name is misspelled; compare with the examples above</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="after-merge">
+      <h2>After merge</h2>
+      <p>Within a few minutes ArgoCD syncs your file and Courier delivers the credentials. To see the status, check your team's application in ArgoCD, or with cluster access:</p>
+<pre><code>kubectl -n team-alpha get oauthclients
+<span class="c">NAME           READY   TYPE           CLIENT ID                     SECRET PATH</span>
+<span class="c">billing-sync   True    confidential   AVcNRtABgj6SSC8VUkON...      kv/teams/team-alpha/oauth-clients/team-alpha-billing-sync</span></code></pre>
+      <p>If <code>READY</code> is <code>False</code>, <code>kubectl -n team-alpha describe oauthclient billing-sync</code> shows the reason. Most failures are retried automatically; <code>NameConflict</code> and <code>InvalidSpec</code> need a change to the request.</p>
+    </section>
+
+    <section id="read">
+      <h2>Read your credentials</h2>
+      <p>The vault entry contains:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td><code>client_id</code></td><td><code>AVcNRtABgj6SSC8VUkON…</code></td></tr>
+            <tr><td><code>client_secret</code></td><td><span class="pill p-secret">confidential clients only</span></td></tr>
+            <tr><td><code>issuer</code>, <code>token_endpoint</code>, <code>authorization_endpoint</code>, <code>jwks_uri</code>, <code>userinfo_endpoint</code></td><td><code>https://auth.sororlab.dev/application/o/team-alpha-billing-sync/</code></td></tr>
+            <tr><td><code>client_type</code>, <code>grant_types</code>, <code>scopes</code>, <code>owner_group</code></td><td>what you requested</td></tr>
+            <tr><td><code>state</code></td><td><code>active</code> when ready. Do not use <code>pending</code> credentials.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>As a person, from your laptop</h3>
+<pre><code>export VAULT_ADDR=https://vault.sororlab.dev
+vault login -method=oidc
+vault kv get kv/teams/team-alpha/oauth-clients/team-alpha-billing-sync
+vault kv get -field=client_secret kv/teams/team-alpha/oauth-clients/team-alpha-billing-sync</code></pre>
+
+      <h3>From a workload</h3>
+      <p>Log in with the workload's own identity, never with a person's token. Supported login methods are a JWT from the identity provider (<code>auth/jwt</code>, role <code>machine</code>) and a Kubernetes service account. Syncing into a Kubernetes Secret with External Secrets and ready-made code samples are on the roadmap.</p>
+
+      <div class="callout secret">
+        <span class="label">Handle it like any secret</span>
+        <p>Read the secret at runtime rather than copying it into configuration files, tickets or chat. If it is ever exposed, ask the identity team to rotate it; removing and re-adding the request also issues a new one.</p>
+      </div>
+    </section>
+
+    <section id="change">
+      <h2>Change or retire a client</h2>
+      <ul>
+        <li><strong>Change it:</strong> edit the file and open a pull request. The client is updated in place and the secret stays the same.</li>
+        <li><strong>Retire it:</strong> delete the file and open a pull request. After merge, the client is removed from the identity provider and its credentials are destroyed. Anything still using them stops working.</li>
+      </ul>
+    </section>
+
+    <section id="faq">
+      <h2>Questions</h2>
+      <h3>Can another team read our secret?</h3>
+      <p>No. The vault path is scoped to your identity group. The check rejects requests whose owner is not your team directory, and the controller enforces the same rule.</p>
+      <h3>Someone joined or left our team. What do we change?</h3>
+      <p>Nothing in Courier. Update the group in the identity provider; vault access follows on their next sign-in.</p>
+      <h3>We already have a client that was set up by hand.</h3>
+      <p>Courier will not touch it, and a request with the same name reports <code>NameConflict</code>. Choose a new name; adopting existing clients is on the roadmap.</p>
+      <h3>How fast is it?</h3>
+      <p>In the reference environment the client is ready about four seconds after ArgoCD applies the merged file. ArgoCD itself polls Git every few minutes.</p>
+    </section>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <span>Courier documentation</span>
+  <span>Source: <a href="https://github.com/paimonsoror/courier">github.com/paimonsoror/courier</a></span>
+</footer>
+
+</body>
+</html>

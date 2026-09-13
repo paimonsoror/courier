@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Courier Implementation Guide</title>
+<meta name="description" content="Install, verify and operate Courier: vault with auto-unseal, identity provider wiring, the controller, the pull request workflow, troubleshooting and hardening.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/courier.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Courier <small>OAuth client delivery</small></a>
+  <nav class="site-nav" aria-label="Documentation">
+    <a href="index.html">Overview</a>
+    <a href="how-it-works.html">How it works</a>
+    <a href="request-a-client.html">Request a client</a>
+    <a href="implementation.html" aria-current="page">Implementation guide</a>
+    <a href="reference.html">Reference</a>
+  </nav>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="On this page">
+    <p>On this page</p>
+    <ol>
+      <li><a href="#prereqs">Prerequisites</a></li>
+      <li><a href="#plan">Install plan</a></li>
+      <li><a href="#vault">1. Vault</a></li>
+      <li><a href="#idp">2. Identity provider</a></li>
+      <li><a href="#vault-config">3. Vault access model</a></li>
+      <li><a href="#controller">4. Controller</a></li>
+      <li><a href="#gitops">5. Pull request workflow</a></li>
+      <li><a href="#verify">Verification</a></li>
+      <li><a href="#operate">Day-2 operations</a></li>
+      <li><a href="#troubleshoot">Troubleshooting</a></li>
+      <li><a href="#harden">Hardening checklist</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="doc">
+      <div class="meta">
+        <span class="audience">Implementation engineers</span>
+        <span>Scripts <b>deploy/phase0 · deploy/phase1 · deploy/argocd</b></span>
+      </div>
+      <h1>Implementation guide</h1>
+      <p class="lede">This guide installs Courier from nothing to a working pull request flow, in the order the pieces depend on each other. Every step names the script that does it and the check that proves it worked. Values shown are from the reference environment; replace hostnames, account IDs and group names with your own.</p>
+    </header>
+
+    <section id="prereqs">
+      <h2>Prerequisites</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Need</th><th>Reference environment</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Kubernetes cluster</td><td>k3s v1.36, single node</td><td>Cilium ingress, cert-manager with Let's Encrypt DNS-01</td></tr>
+            <tr><td>GitOps</td><td>ArgoCD with the ApplicationSet controller</td><td>App-of-apps repository for platform services</td></tr>
+            <tr><td>Identity provider</td><td>Authentik 2026.8</td><td>An API token able to create groups, service accounts, roles and OAuth providers (setup only)</td></tr>
+            <tr><td>Vault</td><td>HashiCorp Vault Community Edition 2.0.4 (chart 0.34.1)</td><td>OpenBao is API-compatible for everything used</td></tr>
+            <tr><td>Auto-unseal key</td><td>AWS KMS key in <code>us-east-1</code></td><td>About USD 1 per month; avoids manual unseal after every restart</td></tr>
+            <tr><td>Git hosting</td><td>GitHub, public repository</td><td>Branch protection, CODEOWNERS, Actions</td></tr>
+            <tr><td>Workstation tools</td><td><code>kubectl</code>, <code>helm</code>, <code>python3</code>, Go 1.26+, Docker, AWS CLI</td><td>Scripts run on a host with cluster access</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="plan">
+      <h2>Install plan</h2>
+      <p>Each stage depends on the previous one. The phase folders in the repository follow the same order.</p>
+      <ol class="seq">
+        <li><div><span class="who">vault</span><p>Deploy Vault with KMS auto-unseal and a public hostname.</p></div></li>
+        <li><div><span class="who">identity provider</span><p>Create the Vault login client, team groups and test identities.</p></div></li>
+        <li><div><span class="who">vault access</span><p>Initialize Vault; map identity groups to per-team policies; prove group-gated reads.</p></div></li>
+        <li><div><span class="who">controller</span><p>Give the controller its own vault and IdP identities; build and deploy it; run the acceptance test.</p></div></li>
+        <li><div><span class="who">pull requests</span><p>Register the ArgoCD project and ApplicationSet; protect the branch; create the approval label.</p></div></li>
+      </ol>
+    </section>
+
+    <section id="vault">
+      <h2>1. Vault with auto-unseal</h2>
+      <h3>Create the unseal key and a narrowly scoped IAM user</h3>
+      <p>The IAM user may only encrypt, decrypt and describe with this one key. Its access key goes straight into a Kubernetes Secret and is never printed.</p>
+<pre><code>aws kms create-key --description "Courier: Vault auto-unseal" --tags TagKey=project,TagValue=courier
+aws kms create-alias --alias-name alias/courier-vault-unseal --target-key-id &lt;key-id&gt;
+aws iam create-user --user-name courier-vault-unseal
+aws iam put-user-policy --user-name courier-vault-unseal --policy-name vault-awskms-unseal \
+  --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+    "Action":["kms:Encrypt","kms:Decrypt","kms:DescribeKey"],"Resource":"&lt;key-arn&gt;"}]}'
+
+<span class="c"># Secret keys: AWS_REGION, VAULT_AWSKMS_SEAL_KEY_ID, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY</span>
+kubectl create namespace vault
+kubectl -n vault create secret generic vault-awskms --from-env-file=/dev/stdin</code></pre>
+
+      <h3>Deploy the chart</h3>
+      <p>Values live in <code>deploy/phase0/vault-values.yaml</code>: a single Raft replica on local disk, <code>seal "awskms" {}</code> reading its settings from the Secret, the UI behind the ingress, and an audit volume. Add it to your app-of-apps as an ArgoCD Application for chart <code>vault</code> version <code>0.34.1</code> from <code>https://helm.releases.hashicorp.com</code>.</p>
+      <p>Create DNS for the Vault hostname, pointing at the ingress. Use the current domain, not a legacy internal zone.</p>
+      <div class="callout warn">
+        <span class="label">Use local disk, not NFS</span>
+        <p>Keep Vault's data and audit volumes off NFS. A hard-mounted NFS volume can hang the node on restart, and Vault is exactly the service you do not want waiting on it.</p>
+      </div>
+    </section>
+
+    <section id="idp">
+      <h2>2. Identity provider</h2>
+<pre><code>deploy/phase0/authentik-setup.sh</code></pre>
+      <p>Runs inside the Authentik server pod, is safe to re-run, and creates:</p>
+      <ul>
+        <li>OAuth provider and application <code>vault</code> (confidential), with redirect URIs for the Vault UI and CLI and with grant types <code>authorization_code</code>, <code>refresh_token</code> and <code>client_credentials</code></li>
+        <li>Groups <code>vault-admins</code>, <code>team-alpha</code> and <code>team-bravo</code>, each bound to the application</li>
+        <li>Service accounts <code>courier-svc-alpha</code> and <code>courier-svc-bravo</code> for automated tests</li>
+        <li>Secrets <code>vault/vault-oidc</code> and <code>vault/courier-phase0-testers</code></li>
+      </ul>
+      <div class="callout">
+        <span class="label">Groups claim</span>
+        <p>Vault needs a <code>groups</code> claim in tokens. In the reference environment it comes from a custom scope mapping named <code>oauth-groups</code>. Confirm yours exists before continuing.</p>
+      </div>
+    </section>
+
+    <section id="vault-config">
+      <h2>3. Vault access model</h2>
+<pre><code>deploy/phase0/vault-bootstrap.sh   <span class="c"># init, auth methods, policies, identity groups, sample secrets</span>
+deploy/phase0/verify.sh            <span class="c"># must print ALL CHECKS PASSED</span></code></pre>
+      <p>On first run Vault is initialized with recovery keys, and the keys and root token are written once to <code>~/courier-vault-init.json</code> (mode 600). The script then configures:</p>
+      <ul>
+        <li>KV v2 at <code>kv/</code> and a file audit device</li>
+        <li><code>oidc/</code> for people (role <code>human</code>) and <code>jwt/</code> for machines (role <code>machine</code>)</li>
+        <li>Policies <code>vault-admin</code>, one per team, and <code>courier</code> (write-only)</li>
+        <li>For each IdP group, <strong>two</strong> external vault groups: <code>team-alpha</code> aliased on <code>oidc/</code> and <code>team-alpha-jwt</code> aliased on <code>jwt/</code></li>
+      </ul>
+      <div class="callout secret">
+        <span class="label">Immediately after init</span>
+        <p>Move <code>~/courier-vault-init.json</code> to offline storage and delete it with <code>shred -u</code>. Once OIDC admin login works, revoke the root token. Use <code>vault operator generate-root</code> with the recovery keys if you ever need one again.</p>
+      </div>
+      <p>Prove automatic unsealing: <code>kubectl -n vault delete pod vault-0</code>. It must return with <code>Sealed false</code> and no one entering keys.</p>
+    </section>
+
+    <section id="controller">
+      <h2>4. Controller</h2>
+<pre><code>deploy/phase1/authentik-controller-account.sh  <span class="c"># scoped IdP identity → Secret courier-system/courier-authentik</span>
+deploy/phase1/vault-kubernetes-auth.sh         <span class="c"># auth/kubernetes/role/courier → policy courier</span>
+deploy/phase1/deploy-controller.sh             <span class="c"># build image, import into k3s, apply CRD + RBAC + manager</span>
+deploy/phase1/acceptance.sh                    <span class="c"># must print PHASE 1 ACCEPTANCE PASSED</span></code></pre>
+      <h3>What the identities can do</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Identity</th><th>Granted</th></tr></thead>
+          <tbody>
+            <tr><td>Authentik service account <code>courier-controller</code></td><td>Role <code>courier-controller</code>: add, change, delete and view OAuth2 providers, applications and policy bindings; view groups, flows, certificate key pairs and scope mappings</td></tr>
+            <tr><td>Vault role <code>courier</code></td><td>Bound to service account <code>courier-system/courier-controller-manager</code>; policy <code>courier</code> only; 1 hour token TTL</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Controller configuration is set by <code>deploy/phase1/controller/manager-wiring.yaml</code>; every flag is listed in the <a href="reference.html#controller">reference</a>.</p>
+      <p>Optional developer check against the real systems: <code>deploy/phase1/integration-test.sh</code>.</p>
+      <div class="callout">
+        <span class="label">No registry in the reference environment</span>
+        <p>The image is built on the node and imported with <code>docker save courier-controller:dev | sudo k3s ctr images import -</code>, and the manager uses <code>imagePullPolicy: Never</code>. With a registry, push the image and change the overlay's <code>images</code> entry.</p>
+      </div>
+    </section>
+
+    <section id="gitops">
+      <h2>5. Pull request workflow</h2>
+      <h3>Register with ArgoCD</h3>
+      <p>Add one Application to your app-of-apps with source path <code>deploy/argocd</code> and destination namespace <code>argocd</code>. It creates:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Object</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>AppProject <code>courier-requests</code></td><td>Only <code>OAuthClient</code> objects (plus namespaces), only in <code>team-*</code>, only from this repository</td></tr>
+            <tr><td>ApplicationSet <code>courier-requests</code></td><td>One application <code>courier-requests-&lt;team&gt;</code> per directory under <code>requests/</code>; automated sync with prune</td></tr>
+            <tr><td>Application <code>courier-controller</code></td><td>Keeps the controller manifests in sync with <code>deploy/phase1/controller</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Protect the repository</h3>
+      <p>In GitHub, under Settings → Branches → rule for <code>main</code>:</p>
+      <ul>
+        <li>Require a pull request before merging, with at least one approval</li>
+        <li>Require review from Code Owners</li>
+        <li>Require status checks to pass: <code>Validate requests</code></li>
+        <li>Do not allow bypassing the above settings</li>
+      </ul>
+      <p>Create the label <code>security-approved</code>, and restrict who can apply it to the identity or security team. Replace the users in <code>.github/CODEOWNERS</code> with your GitHub teams.</p>
+
+      <h3>Onboard a team</h3>
+      <ol class="seq">
+        <li><div><span class="who">identity provider</span><p>Create the group (for example <code>team-payments</code>).</p></div></li>
+        <li><div><span class="who">vault</span><p>Add the team to the group list in <code>vault-bootstrap.sh</code> and re-run it to create the team policy and both identity groups.</p></div></li>
+        <li><div><span class="who">repository</span><p>Add <code>requests/team-payments/</code> with its first request, and a CODEOWNERS line for the team's approvers.</p></div></li>
+      </ol>
+      <div class="callout warn">
+        <span class="label">Known gap</span>
+        <p>Team onboarding in vault is still a script edit. A <code>Team</code> resource that manages the policy and identity groups is planned.</p>
+      </div>
+    </section>
+
+    <section id="verify">
+      <h2>Verification</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Check</th><th>Command</th><th>Expected</th></tr></thead>
+          <tbody>
+            <tr><td>Vault unsealed with KMS</td><td><code>kubectl -n vault exec vault-0 -- vault status</code></td><td><code>Seal Type awskms</code>, <code>Sealed false</code></td></tr>
+            <tr><td>Group-gated reads</td><td><code>deploy/phase0/verify.sh</code></td><td><code>ALL CHECKS PASSED</code></td></tr>
+            <tr><td>Alias per group per mount</td><td>list <code>identity/group-alias/id</code></td><td>Each IdP group once on <code>oidc/</code> and once on <code>jwt/</code></td></tr>
+            <tr><td>Controller delivers</td><td><code>deploy/phase1/acceptance.sh</code></td><td><code>PHASE 1 ACCEPTANCE PASSED</code></td></tr>
+            <tr><td>Repository valid</td><td><code>go run ./cmd/courier validate requests</code></td><td><code>N request(s) valid</code></td></tr>
+            <tr><td>Sync healthy</td><td><code>kubectl -n argocd get applications -l app.kubernetes.io/part-of=courier</code></td><td>All <code>Synced</code> and <code>Healthy</code></td></tr>
+            <tr><td>Requests ready</td><td><code>kubectl get oauthclients -A</code></td><td><code>READY True</code> for every request</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="operate">
+      <h2>Day-2 operations</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Task</th><th>How</th></tr></thead>
+          <tbody>
+            <tr><td>Why is a request not ready?</td><td><code>kubectl -n &lt;team&gt; describe oauthclient &lt;name&gt;</code> for the condition reason; <code>kubectl -n courier-system logs deploy/courier-controller-manager</code> for detail</td></tr>
+            <tr><td>Force a new secret</td><td>Remove the request and add it back in a second pull request. A rotate annotation is planned.</td></tr>
+            <tr><td>Upgrade the controller</td><td>Rebuild the image (or push to your registry), then <code>kubectl -n courier-system rollout restart deploy/courier-controller-manager</code></td></tr>
+            <tr><td>Who read a secret?</td><td>Vault audit log at <code>/vault/audit/audit.log</code>; ship it to your log platform</td></tr>
+            <tr><td>Rotate the controller's IdP token</td><td>Delete token <code>courier-controller-api</code> in Authentik and re-run <code>authentik-controller-account.sh</code>, then restart the controller</td></tr>
+            <tr><td>Remove a stuck object</td><td>Fix the cause first. Removing the finalizer by hand skips deletion of the IdP client and the secret.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="troubleshoot">
+      <h2>Troubleshooting</h2>
+      <p>Each of these was hit while building the reference environment.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td><code>invalid_grant</code> for client credentials; Authentik logs <code>Invalid grant_type for provider</code></td><td>Authentik 2026.x providers have an explicit grant-type allow-list, which is empty when created through the API</td><td>Always set <code>grant_types</code>. Courier's adapter does this from the request.</td></tr>
+            <tr><td>People sign in to Vault but get no team access, while machine logins work (or the reverse)</td><td>A vault external group holds only one alias; the second mount's alias replaced the first</td><td>One vault group per auth mount per IdP group, as <code>vault-bootstrap.sh</code> does. Count aliases after changing auth wiring.</td></tr>
+            <tr><td><code>error configuring token validator: unsupported config type</code> on JWT login</td><td>The mount is configured with an OIDC client ID and secret, which disables JWT-role validation</td><td>Keep separate <code>oidc/</code> and <code>jwt/</code> mounts</td></tr>
+            <tr><td>Vault log warning <code>no key-id in common with currently healthy seals</code> on first unseal</td><td>Normal once, right after initialization</td><td>None</td></tr>
+            <tr><td>Image build fails with <code>gpg: decryption failed: No secret key</code></td><td>Docker's credential store cannot unlock in a non-interactive session, even for public images</td><td>Build with an empty <code>DOCKER_CONFIG=$(mktemp -d)</code></td></tr>
+            <tr><td>A setup script re-run tries to recreate an existing Authentik application</td><td>The applications list endpoint ignores <code>?slug=</code></td><td>Look applications up with <code>core/applications/&lt;slug&gt;/</code></td></tr>
+            <tr><td>Request <code>Ready=False</code>, reason <code>NameConflict</code></td><td>An application with slug <code>&lt;team&gt;-&lt;name&gt;</code> exists and was not created by Courier</td><td>Rename the request, or retire the old application</td></tr>
+            <tr><td>Vault hostname resolves on some machines only</td><td>Record created in the wrong zone, or the secondary DNS server has not synced</td><td>Point the record at the ingress name in the current domain; check zone transfer to secondaries</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="harden">
+      <h2>Hardening checklist</h2>
+      <p>The proof of value takes shortcuts that production should not.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>Proof of value</th><th>Production</th></tr></thead>
+          <tbody>
+            <tr><td>Root token</td><td>Kept in the init file for test scripts</td><td><span class="pill p-bad">revoke</span> after admin OIDC login works; move scripts to an admin login</td></tr>
+            <tr><td>Traffic inside the cluster</td><td>TLS terminates at the ingress; Vault listens on plain HTTP in-cluster</td><td>Enable Vault listener TLS and use <code>https://</code> for <code>VAULT_ADDR</code></td></tr>
+            <tr><td>Vault <code>vault-admin</code> policy</td><td><code>path "*"</code> with every capability</td><td>Split into scoped operator policies</td></tr>
+            <tr><td>Audit</td><td>File audit device on a volume</td><td>Ship to a central log platform with retention and alerts</td></tr>
+            <tr><td>Controller image</td><td>Built on the node, <code>imagePullPolicy: Never</code></td><td>Signed image from a registry, pinned by digest</td></tr>
+            <tr><td>Branch protection</td><td>Configured by hand</td><td>Managed as code, with bypass disabled for administrators</td></tr>
+            <tr><td>Kubernetes auth audience</td><td>Unset (Vault warns)</td><td>Set <code>audience</code> on the <code>courier</code> role and in the projected token</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <span>Courier documentation</span>
+  <span>Source: <a href="https://github.com/paimonsoror/courier">github.com/paimonsoror/courier</a></span>
+</footer>
+
+</body>
+</html>

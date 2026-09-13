@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Courier Reference</title>
+<meta name="description" content="OAuthClient fields and status, condition reasons, policy file, CLI and controller flags, vault layout and policies, and the objects Courier creates.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/courier.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Courier <small>OAuth client delivery</small></a>
+  <nav class="site-nav" aria-label="Documentation">
+    <a href="index.html">Overview</a>
+    <a href="how-it-works.html">How it works</a>
+    <a href="request-a-client.html">Request a client</a>
+    <a href="implementation.html">Implementation guide</a>
+    <a href="reference.html" aria-current="page">Reference</a>
+  </nav>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="On this page">
+    <p>On this page</p>
+    <ol>
+      <li><a href="#oauthclient">OAuthClient spec</a></li>
+      <li><a href="#status">Status</a></li>
+      <li><a href="#conditions">Condition reasons</a></li>
+      <li><a href="#naming">Naming rules</a></li>
+      <li><a href="#policy">Policy file</a></li>
+      <li><a href="#cli">courier validate</a></li>
+      <li><a href="#controller">Controller settings</a></li>
+      <li><a href="#vault-layout">Vault layout</a></li>
+      <li><a href="#vault-policies">Vault policies</a></li>
+      <li><a href="#idp-objects">IdP objects</a></li>
+      <li><a href="#argocd">ArgoCD objects</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="doc">
+      <div class="meta">
+        <span class="audience">Reference</span>
+        <span>API <b>courier.sororlab.dev/v1alpha1</b></span>
+      </div>
+      <h1>Reference</h1>
+      <p class="lede">Every field, flag, path and object name in one place.</p>
+    </header>
+
+    <section id="oauthclient">
+      <h2>OAuthClient spec</h2>
+      <p>Namespaced; short name <code>oac</code>. The namespace is the owning team.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Rules</th></tr></thead>
+          <tbody>
+            <tr><td><code>clientType</code></td><td>string</td><td>yes</td><td><code>public</code> or <code>confidential</code></td></tr>
+            <tr><td><code>grantTypes</code></td><td>list</td><td>yes</td><td>At least one of <code>authorization_code</code>, <code>refresh_token</code>, <code>client_credentials</code>. <code>client_credentials</code> requires <code>confidential</code>.</td></tr>
+            <tr><td><code>redirectUris</code></td><td>list</td><td>with <code>authorization_code</code></td><td>Absolute https URLs; no wildcards or fragments. <code>http</code> only for <code>localhost</code>, <code>127.0.0.1</code> or <code>::1</code> on public clients.</td></tr>
+            <tr><td><code>scopes</code></td><td>list</td><td>no</td><td>Defaults to <code>[openid]</code>. Each scope must map to an IdP scope mapping.</td></tr>
+            <tr><td><code>allowGroups</code></td><td>list</td><td>no</td><td>IdP groups allowed to sign in through the client. Defaults to the owner group.</td></tr>
+            <tr><td><code>ownerGroup</code></td><td>string</td><td>no</td><td>Must equal the namespace; empty means the namespace.</td></tr>
+            <tr><td><code>displayName</code></td><td>string</td><td>no</td><td>Shown in the IdP. Defaults to <code>&lt;namespace&gt;/&lt;name&gt;</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="status">
+      <h2>Status</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>conditions[type=Ready]</code></td><td><code>True</code> when the client exists and credentials are active</td></tr>
+            <tr><td><code>clientId</code></td><td>Client ID in the IdP (not sensitive)</td></tr>
+            <tr><td><code>secretPath</code></td><td>Vault path where the owning team reads the credentials</td></tr>
+            <tr><td><code>credentialsDelivered</code></td><td>Credentials were stored and promoted to <code>active</code>. If lost, the controller issues a new secret.</td></tr>
+            <tr><td><code>lastSecretIssued</code></td><td>When Courier last generated a secret for this client</td></tr>
+            <tr><td><code>identityProvider</code></td><td>Adapter instance managing the client</td></tr>
+            <tr><td><code>observedGeneration</code></td><td>Spec generation last reconciled</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>kubectl get oauthclients</code> shows columns <code>READY</code>, <code>TYPE</code>, <code>CLIENT ID</code>, <code>SECRET PATH</code>, <code>AGE</code>.</p>
+    </section>
+
+    <section id="conditions">
+      <h2>Condition reasons</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Reason</th><th>Ready</th><th>Meaning</th><th>Retried</th></tr></thead>
+          <tbody>
+            <tr><td><code>Delivered</code></td><td><span class="pill p-good">True</span></td><td>Client exists; credentials are active at <code>secretPath</code></td><td>Re-applied every resync period</td></tr>
+            <tr><td><code>InvalidSpec</code></td><td><span class="pill p-bad">False</span></td><td>The request breaks a rule; nothing was created</td><td>No; waits for a spec change</td></tr>
+            <tr><td><code>NameConflict</code></td><td><span class="pill p-bad">False</span></td><td>An IdP application with this name exists and is not managed by Courier</td><td>No</td></tr>
+            <tr><td><code>ReconcileFailed</code></td><td><span class="pill p-bad">False</span></td><td>IdP or vault call failed; the message has details</td><td>Yes, with back-off</td></tr>
+            <tr><td><code>DeleteFailed</code></td><td><span class="pill p-bad">False</span></td><td>Cleanup failed during deletion; the object stays until it succeeds</td><td>Yes, with back-off</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="naming">
+      <h2>Naming rules</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Thing</th><th>Pattern</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>Request file</td><td><code>requests/&lt;team&gt;/&lt;name&gt;.yaml</code></td><td><code>requests/team-alpha/billing-sync.yaml</code></td></tr>
+            <tr><td>Team directory, namespace, IdP owner group</td><td>policy <code>teamPattern</code></td><td><code>team-alpha</code></td></tr>
+            <tr><td>Client name in the IdP</td><td><code>&lt;team&gt;-&lt;name&gt;</code>, a DNS label of at most 63 characters</td><td><code>team-alpha-billing-sync</code></td></tr>
+            <tr><td>Authentik provider</td><td><code>courier-&lt;team&gt;-&lt;name&gt;</code></td><td><code>courier-team-alpha-billing-sync</code></td></tr>
+            <tr><td>Vault path</td><td><code>kv/teams/&lt;team&gt;/oauth-clients/&lt;team&gt;-&lt;name&gt;</code></td><td><code>kv/teams/team-alpha/oauth-clients/team-alpha-billing-sync</code></td></tr>
+            <tr><td>ArgoCD application</td><td><code>courier-requests-&lt;team&gt;</code></td><td><code>courier-requests-team-alpha</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="policy">
+      <h2>Policy file</h2>
+      <p><code>requests/.policy.yaml</code>, owned by the identity team.</p>
+<pre><code><span class="k">teamPattern</span>: "^team-[a-z0-9-]+$"      <span class="c"># regex every team directory must match</span>
+<span class="k">allowedRedirectHosts</span>:                 <span class="c"># exact hosts, or "*.domain" for subdomains; empty allows any</span>
+  - "*.sororlab.dev"
+  - localhost
+  - 127.0.0.1
+<span class="k">grantApprovals</span>:                       <span class="c"># grant → label required on the PR (changed requests only)</span>
+  <span class="k">client_credentials</span>: security-approved</code></pre>
+      <p>Unknown keys are rejected.</p>
+    </section>
+
+    <section id="cli">
+      <h2>courier validate</h2>
+<pre><code>go run ./cmd/courier validate [flags] [requests-dir]</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Flag</th><th>Default</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>requests-dir</code> (argument)</td><td><code>requests</code></td><td>Directory to validate</td></tr>
+            <tr><td><code>--policy</code></td><td><code>&lt;dir&gt;/.policy.yaml</code> if present</td><td>Policy file</td></tr>
+            <tr><td><code>--changed</code></td><td>none</td><td>Comma-separated files changed by the pull request; drives the summary and approval checks</td></tr>
+            <tr><td><code>--labels</code></td><td>none</td><td>Comma-separated pull request labels</td></tr>
+            <tr><td><code>--enforce-approvals</code></td><td><code>false</code></td><td>Require policy approval labels on changed requests</td></tr>
+            <tr><td><code>--summary</code></td><td>none</td><td>Append a Markdown summary to this file (the workflow uses <code>$GITHUB_STEP_SUMMARY</code>)</td></tr>
+            <tr><td><code>--vault-kv-mount</code></td><td><code>kv</code></td><td>Mount shown in summary paths</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Exit codes: <code>0</code> valid, <code>1</code> problems found, <code>2</code> usage or load error. In GitHub Actions each problem is also printed as a file annotation.</p>
+      <h3>Rules applied</h3>
+      <ul>
+        <li>Files at <code>&lt;dir&gt;/&lt;team&gt;/&lt;name&gt;.yaml</code>; hidden files and non-YAML files are ignored</li>
+        <li>Only <code>courier.sororlab.dev/v1alpha1</code> <code>OAuthClient</code> objects; unknown fields rejected</li>
+        <li><code>metadata.namespace</code> equals the team directory; <code>metadata.name</code> equals the file name; no duplicates</li>
+        <li>The same client rules the controller enforces (owner group, grants, redirects, name length)</li>
+        <li>Policy: team pattern, redirect hosts, approval labels</li>
+      </ul>
+    </section>
+
+    <section id="controller">
+      <h2>Controller settings</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Flag</th><th>Environment</th><th>Default</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>--authentik-url</code></td><td><code>AUTHENTIK_URL</code></td><td>required</td><td>Authentik base URL</td></tr>
+            <tr><td>–</td><td><code>AUTHENTIK_TOKEN</code></td><td>required</td><td>Controller's API token (from Secret <code>courier-authentik</code>)</td></tr>
+            <tr><td><code>--authentik-groups-mapping</code></td><td><code>AUTHENTIK_GROUPS_MAPPING</code></td><td><code>oauth-groups</code></td><td>Scope mapping that emits the <code>groups</code> claim</td></tr>
+            <tr><td><code>--idp-name</code></td><td><code>COURIER_IDP_NAME</code></td><td><code>authentik</code></td><td>Adapter instance name, shown in status and the vault entry</td></tr>
+            <tr><td><code>--vault-addr</code></td><td><code>VAULT_ADDR</code></td><td>required</td><td>Vault address</td></tr>
+            <tr><td><code>--vault-kv-mount</code></td><td><code>VAULT_KV_MOUNT</code></td><td><code>kv</code></td><td>KV v2 mount for credentials</td></tr>
+            <tr><td><code>--vault-auth-mount</code></td><td><code>VAULT_AUTH_MOUNT</code></td><td><code>kubernetes</code></td><td>Kubernetes auth mount</td></tr>
+            <tr><td><code>--vault-role</code></td><td><code>VAULT_ROLE</code></td><td><code>courier</code></td><td>Kubernetes auth role</td></tr>
+            <tr><td>–</td><td><code>VAULT_TOKEN</code></td><td>unset</td><td>Static token for development; overrides Kubernetes auth</td></tr>
+            <tr><td><code>--resync-period</code></td><td>–</td><td><code>10m</code></td><td>How often ready clients are re-applied</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="vault-layout">
+      <h2>Vault layout</h2>
+<pre><code>kv/                                        <span class="c"># KV v2</span>
+└── teams/&lt;team&gt;/oauth-clients/&lt;team&gt;-&lt;name&gt;
+      client_id               <span class="c"># always</span>
+      <span class="s">client_secret</span>           <span class="c"># confidential clients only</span>
+      client_type             <span class="c"># public | confidential</span>
+      grant_types             <span class="c"># space-separated</span>
+      scopes                  <span class="c"># space-separated</span>
+      issuer
+      authorization_endpoint
+      token_endpoint
+      jwks_uri
+      userinfo_endpoint
+      owner_group
+      idp                     <span class="c"># adapter instance</span>
+      managed_by              <span class="c"># courier-controller</span>
+      state                   <span class="c"># pending | active</span></code></pre>
+      <p>Auth mounts: <code>oidc/</code> (role <code>human</code>), <code>jwt/</code> (role <code>machine</code>), <code>kubernetes/</code> (role <code>courier</code>). Audit device <code>file/</code> at <code>/vault/audit/audit.log</code>.</p>
+    </section>
+
+    <section id="vault-policies">
+      <h2>Vault policies</h2>
+      <div class="two">
+        <div class="panel">
+          <h3><code>team-&lt;name&gt;</code></h3>
+<pre><code>path "kv/data/teams/team-alpha/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/teams/team-alpha/*" {
+  capabilities = ["read", "list"]
+}
+path "kv/metadata/teams/team-alpha" {
+  capabilities = ["list"]
+}</code></pre>
+        </div>
+        <div class="panel">
+          <h3><code>courier</code></h3>
+<pre><code><span class="c"># write, never read</span>
+path "kv/data/teams/+/oauth-clients/*" {
+  capabilities = ["create", "update", "patch"]
+}
+path "kv/metadata/teams/+/oauth-clients/*" {
+  capabilities = ["delete"]
+}</code></pre>
+        </div>
+      </div>
+      <p>Identity groups: for every IdP group <code>G</code>, external group <code>G</code> (alias <code>G</code> on <code>oidc/</code>) and <code>G-jwt</code> (alias <code>G</code> on <code>jwt/</code>), both with policy <code>G</code>.</p>
+    </section>
+
+    <section id="idp-objects">
+      <h2>Objects Courier creates in the IdP</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Object</th><th>Values</th></tr></thead>
+          <tbody>
+            <tr><td>OAuth2 provider</td><td>Name <code>courier-&lt;team&gt;-&lt;name&gt;</code>; <code>client_type</code>, <code>grant_types</code>, strict <code>redirect_uris</code>; scope mappings; <code>sub_mode: user_email</code>; claims included in ID token; signing key <code>authentik Self-signed Certificate</code></td></tr>
+            <tr><td>Application</td><td>Slug <code>&lt;team&gt;-&lt;name&gt;</code>; <code>meta_description</code> starts with <code>managed-by: courier</code>; policy engine mode <code>any</code></td></tr>
+            <tr><td>Policy bindings</td><td>One group binding per <code>allowGroups</code> entry; bindings for groups no longer listed are removed</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Built-in scopes map to Authentik's managed mappings (<code>openid</code>, <code>email</code>, <code>profile</code>, <code>offline_access</code>). Other scopes need an entry in the adapter's scope mapping configuration, for example <code>groups → oauth-groups</code>.</p>
+    </section>
+
+    <section id="argocd">
+      <h2>ArgoCD objects</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Object</th><th>Key settings</th></tr></thead>
+          <tbody>
+            <tr><td>AppProject <code>courier-requests</code></td><td>Source: this repository. Destinations: <code>team-*</code>. Namespaced kinds: <code>courier.sororlab.dev/OAuthClient</code>. Cluster kinds: <code>Namespace</code>.</td></tr>
+            <tr><td>ApplicationSet <code>courier-requests</code></td><td>Git directory generator on <code>requests/*</code>; includes <code>*.yaml</code>; automated sync with prune and self-heal; <code>CreateNamespace=true</code></td></tr>
+            <tr><td>Application <code>courier-controller</code></td><td>Path <code>deploy/phase1/controller</code>; namespace <code>courier-system</code>; server-side apply</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <span>Courier documentation</span>
+  <span>Source: <a href="https://github.com/paimonsoror/courier">github.com/paimonsoror/courier</a></span>
+</footer>
+
+</body>
+</html>
