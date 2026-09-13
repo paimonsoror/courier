@@ -1,0 +1,18 @@
+# The image is imported straight into k3s containerd (no registry), so never pull.
+- op: add
+  path: /spec/template/spec/containers/0/imagePullPolicy
+  value: Never
+- op: add
+  path: /spec/template/spec/containers/0/env
+  value:
+    - name: AUTHENTIK_URL
+      value: https://auth.sororlab.dev
+    - name: AUTHENTIK_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: courier-authentik
+          key: AUTHENTIK_TOKEN
+    - name: VAULT_ADDR
+      value: http://vault-active.vault.svc:8200
+    - name: VAULT_ROLE
+      value: courier

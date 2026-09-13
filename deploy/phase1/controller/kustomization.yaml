@@ -1,0 +1,17 @@
+# Homelab install of the Courier controller: the kubebuilder default
+# (CRD, RBAC, manager in courier-system) plus image and wiring.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../config/default
+
+images:
+  - name: controller
+    newName: docker.io/library/courier-controller
+    newTag: dev
+
+patches:
+  - path: manager-wiring.yaml
+    target:
+      kind: Deployment
