@@ -1,0 +1,22 @@
+# Example request: team-alpha asks for a machine-to-machine client.
+# After the controller reconciles it, team-alpha members (IdP group team-alpha)
+# read the credentials at kv/teams/team-alpha/oauth-clients/team-alpha-billing-sync.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-alpha
+---
+apiVersion: courier.sororlab.dev/v1alpha1
+kind: OAuthClient
+metadata:
+  name: billing-sync
+  namespace: team-alpha
+spec:
+  displayName: "team-alpha: billing sync job"
+  clientType: confidential
+  grantTypes:
+    - client_credentials
+  scopes:
+    - openid
+    - profile
+    - groups
