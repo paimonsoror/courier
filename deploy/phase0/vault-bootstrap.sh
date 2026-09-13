@@ -107,8 +107,10 @@ done
 
 v policy write courier - <<'HCL'
 # Courier controller: write client credentials, never read them back.
+# "patch" lets it promote pending -> active and refresh metadata with an HTTP
+# PATCH (JSON merge) without reading or resending the secret.
 path "kv/data/teams/+/oauth-clients/*" {
-  capabilities = ["create", "update"]
+  capabilities = ["create", "update", "patch"]
 }
 path "kv/metadata/teams/+/oauth-clients/*" {
   capabilities = ["delete"]
