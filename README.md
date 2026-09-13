@@ -19,7 +19,7 @@ Backstage template ─► PR (merge = approval) ─► ArgoCD ─► Courier con
 
 ## Documentation
 
-Open [`docs/site/index.html`](docs/site/index.html) in a browser:
+Published at **https://paimonsoror.github.io/courier/** (GitHub Pages, source `main` `/docs`), or open [`docs/site/index.html`](docs/site/index.html) locally:
 
 | Page | For |
 |---|---|
