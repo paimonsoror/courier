@@ -1,0 +1,14 @@
+apiVersion: courier.sororlab.dev/v1alpha1
+kind: OAuthClient
+metadata:
+  name: billing-sync
+  namespace: team-alpha
+spec:
+  displayName: "team-alpha: billing sync job"
+  clientType: confidential
+  grantTypes:
+    - client_credentials
+  scopes:
+    - openid
+    - profile
+    - groups

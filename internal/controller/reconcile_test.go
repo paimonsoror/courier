@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -72,9 +73,7 @@ func (s *memStore) Patch(_ context.Context, path string, rec secretstore.Record)
 	if s.data[path] == nil {
 		s.data[path] = map[string]string{}
 	}
-	for k, v := range rec.Fields() {
-		s.data[path][k] = v
-	}
+	maps.Copy(s.data[path], rec.Fields())
 	return nil
 }
 

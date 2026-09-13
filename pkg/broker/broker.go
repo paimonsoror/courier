@@ -126,7 +126,9 @@ func (b *Broker) Delete(ctx context.Context, spec courier.ClientSpec) error {
 	return errors.Join(errs...)
 }
 
-func (b *Broker) record(spec courier.ClientSpec, ref courier.ClientRef, secret courier.Secret, state secretstore.State) secretstore.Record {
+func (b *Broker) record(
+	spec courier.ClientSpec, ref courier.ClientRef, secret courier.Secret, state secretstore.State,
+) secretstore.Record {
 	return secretstore.Record{
 		ClientID:     ref.ClientID,
 		ClientSecret: secret,

@@ -1,0 +1,18 @@
+# Who must approve what. Pair with branch protection on main:
+# "Require a pull request", "Require review from Code Owners", and the
+# "Validate requests" status check.
+#
+# In an organization, replace the user with GitHub teams, e.g.
+#   /requests/team-alpha/   @acme/team-alpha-leads @acme/identity-platform
+
+# Default: the platform owner reviews everything.
+*                         @paimonsoror
+
+# Repository policy and pipelines: identity platform / security only.
+/requests/.policy.yaml    @paimonsoror
+/.github/                 @paimonsoror
+/deploy/argocd/           @paimonsoror
+
+# Each team approves its own requests.
+/requests/team-alpha/     @paimonsoror
+/requests/team-bravo/     @paimonsoror

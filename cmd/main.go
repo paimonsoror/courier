@@ -77,13 +77,16 @@ func main() {
 	var idpName, authentikURL, groupsMapping string
 	var vaultAddr, vaultMount, vaultAuthMount, vaultRole string
 	var resyncPeriod time.Duration
-	flag.StringVar(&idpName, "idp-name", envOr("COURIER_IDP_NAME", "authentik"), "Name of the identity provider adapter instance.")
-	flag.StringVar(&authentikURL, "authentik-url", os.Getenv("AUTHENTIK_URL"), "Authentik base URL. The API token is read from AUTHENTIK_TOKEN.")
+	flag.StringVar(&idpName, "idp-name", envOr("COURIER_IDP_NAME", "authentik"),
+		"Name of the identity provider adapter instance.")
+	flag.StringVar(&authentikURL, "authentik-url", os.Getenv("AUTHENTIK_URL"),
+		"Authentik base URL. The API token is read from AUTHENTIK_TOKEN.")
 	flag.StringVar(&groupsMapping, "authentik-groups-mapping", envOr("AUTHENTIK_GROUPS_MAPPING", "oauth-groups"),
 		"Authentik scope mapping name that emits the groups claim.")
 	flag.StringVar(&vaultAddr, "vault-addr", os.Getenv("VAULT_ADDR"), "Vault address.")
 	flag.StringVar(&vaultMount, "vault-kv-mount", envOr("VAULT_KV_MOUNT", "kv"), "KV v2 mount for credentials.")
-	flag.StringVar(&vaultAuthMount, "vault-auth-mount", envOr("VAULT_AUTH_MOUNT", "kubernetes"), "Vault Kubernetes auth mount.")
+	flag.StringVar(&vaultAuthMount, "vault-auth-mount", envOr("VAULT_AUTH_MOUNT", "kubernetes"),
+		"Vault Kubernetes auth mount.")
 	flag.StringVar(&vaultRole, "vault-role", envOr("VAULT_ROLE", "courier"),
 		"Vault Kubernetes auth role. Ignored when VAULT_TOKEN is set.")
 	flag.DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "How often Ready clients are re-converged.")

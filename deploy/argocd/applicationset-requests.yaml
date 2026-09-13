@@ -1,0 +1,41 @@
+# One ArgoCD Application per team directory under requests/.
+# Merge to main -> ArgoCD syncs the team's OAuthClients -> the controller
+# delivers credentials. Removing a file prunes the OAuthClient, and the
+# controller's finalizer deletes the IdP client and destroys the credentials.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: courier-requests
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/paimonsoror/courier.git
+        revision: main
+        directories:
+          - path: "requests/*"
+  template:
+    metadata:
+      name: "courier-requests-{{ .path.basename }}"
+      labels:
+        app.kubernetes.io/part-of: courier
+        courier.sororlab.dev/team: "{{ .path.basename }}"
+    spec:
+      project: courier-requests
+      source:
+        repoURL: https://github.com/paimonsoror/courier.git
+        targetRevision: main
+        path: "{{ .path.path }}"
+        directory:
+          include: "*.yaml"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{ .path.basename }}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

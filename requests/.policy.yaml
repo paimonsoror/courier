@@ -1,0 +1,16 @@
+# Repository policy for OAuth client requests, applied by `courier validate`
+# on every pull request that touches requests/. Changes to this file are owned
+# by the identity platform team (see .github/CODEOWNERS).
+
+# Team directories (and therefore Kubernetes namespaces and IdP owner groups).
+teamPattern: "^team-[a-z0-9-]+$"
+
+# Redirect URIs may only point at these hosts. "*.domain" matches subdomains.
+allowedRedirectHosts:
+  - "*.sororlab.dev"
+  - localhost
+  - 127.0.0.1
+
+# Grants that need an extra, explicit approval: the label must be on the PR.
+grantApprovals:
+  client_credentials: security-approved

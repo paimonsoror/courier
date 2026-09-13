@@ -20,7 +20,10 @@ type recorded struct {
 func TestStoreRequests(t *testing.T) {
 	var calls []recorded
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c := recorded{method: r.Method, path: r.URL.EscapedPath(), contentType: r.Header.Get("Content-Type"), token: r.Header.Get("X-Vault-Token")}
+		c := recorded{
+			method: r.Method, path: r.URL.EscapedPath(),
+			contentType: r.Header.Get("Content-Type"), token: r.Header.Get("X-Vault-Token"),
+		}
 		var body struct {
 			Data map[string]string `json:"data"`
 		}
@@ -48,7 +51,10 @@ func TestStoreRequests(t *testing.T) {
 		t.Fatalf("PathFor = %q", p)
 	}
 
-	if err := s.Put(ctx, p, secretstore.Record{ClientID: "cid", ClientSecret: courier.NewSecret("sek"), State: secretstore.StatePending}); err != nil {
+	pending := secretstore.Record{
+		ClientID: "cid", ClientSecret: courier.NewSecret("sek"), State: secretstore.StatePending,
+	}
+	if err := s.Put(ctx, p, pending); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	if err := s.Patch(ctx, p, secretstore.Record{ClientID: "cid", State: secretstore.StateActive}); err != nil {
@@ -73,7 +79,8 @@ func TestStoreRequests(t *testing.T) {
 	}
 	put, patch, del := calls[0], calls[1], calls[2]
 
-	if put.method != http.MethodPost || put.path != "/v1/kv/data/teams/team-a/oauth-clients/app" || put.contentType != "application/json" || put.token != "tok" {
+	if put.method != http.MethodPost || put.path != "/v1/kv/data/teams/team-a/oauth-clients/app" ||
+		put.contentType != "application/json" || put.token != "tok" {
 		t.Fatalf("unexpected put %+v", put)
 	}
 	if put.data["client_secret"] != "sek" || put.data["state"] != "pending" {

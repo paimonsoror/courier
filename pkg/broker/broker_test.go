@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -36,7 +37,9 @@ func (f *fakeIDP) Lookup(_ context.Context, name string) (courier.ClientRef, boo
 	return ref, ok, nil
 }
 
-func (f *fakeIDP) EnsureClient(_ context.Context, spec courier.ClientSpec, secret courier.Secret) (courier.ClientRef, error) {
+func (f *fakeIDP) EnsureClient(
+	_ context.Context, spec courier.ClientSpec, secret courier.Secret,
+) (courier.ClientRef, error) {
 	if f.failEnsure != nil {
 		f.log.add("idp.ensure %s FAILED", spec.Name)
 		return courier.ClientRef{}, f.failEnsure
@@ -96,9 +99,7 @@ func (s *fakeStore) Patch(_ context.Context, path string, rec secretstore.Record
 		cur = map[string]string{}
 		s.data[path] = cur
 	}
-	for k, v := range rec.Fields() {
-		cur[k] = v
-	}
+	maps.Copy(cur, rec.Fields())
 	s.log.add("store.patch %s state=%s", path, rec.State)
 	return nil
 }
@@ -112,7 +113,7 @@ func (s *fakeStore) Delete(_ context.Context, path string) error {
 func confidentialSpec() courier.ClientSpec {
 	return courier.ClientSpec{
 		Name:         "payments-mcp",
-		OwnerGroup:   "team-payments",
+		OwnerGroup:   teamPayments,
 		Type:         courier.ClientTypeConfidential,
 		GrantTypes:   []string{courier.GrantAuthorizationCode, courier.GrantRefreshToken},
 		RedirectURIs: []string{"https://mcp.example/callback"},
@@ -129,7 +130,12 @@ func setup() (*Broker, *fakeIDP, *fakeStore, *events) {
 	return b, i, s, log
 }
 
-const path = "kv/teams/team-payments/oauth-clients/payments-mcp"
+const (
+	path           = "kv/teams/team-payments/oauth-clients/payments-mcp"
+	teamPayments   = "team-payments"
+	cidPaymentsMCP = "cid-payments-mcp"
+	stateActive    = "active"
+)
 
 func TestEnsureNewConfidentialClientStoresBeforeIdP(t *testing.T) {
 	b, idp, store, log := setup()
@@ -147,14 +153,14 @@ func TestEnsureNewConfidentialClientStoresBeforeIdP(t *testing.T) {
 	if !slices.Equal(*log, want) {
 		t.Fatalf("order:\n got %q\nwant %q", *log, want)
 	}
-	if !res.SecretIssued || res.Ref.ClientID != "cid-payments-mcp" || res.Path != path {
+	if !res.SecretIssued || res.Ref.ClientID != cidPaymentsMCP || res.Path != path {
 		t.Fatalf("unexpected result %+v", res)
 	}
 	got := store.data[path]
 	if got["client_secret"] != idp.secrets["payments-mcp"] {
 		t.Fatal("stored secret differs from the secret the IdP accepted")
 	}
-	if got["state"] != "active" || got["client_id"] != "cid-payments-mcp" || got["owner_group"] != "team-payments" {
+	if got["state"] != stateActive || got["client_id"] != cidPaymentsMCP || got["owner_group"] != teamPayments {
 		t.Fatalf("unexpected stored fields %v", got)
 	}
 }
@@ -178,7 +184,7 @@ func TestEnsureIdPFailureLeavesOnlyPendingCredentials(t *testing.T) {
 	if _, err := b.Ensure(context.Background(), confidentialSpec(), Prior{}); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
-	if store.data[path]["state"] != "active" || store.data[path]["client_secret"] != idp.secrets["payments-mcp"] {
+	if store.data[path]["state"] != stateActive || store.data[path]["client_secret"] != idp.secrets["payments-mcp"] {
 		t.Fatalf("retry did not converge: %v", store.data[path])
 	}
 }
@@ -216,7 +222,7 @@ func TestEnsureDeliveredClientKeepsSecret(t *testing.T) {
 
 func TestEnsureExistingClientWithoutDeliveryRotates(t *testing.T) {
 	b, idp, store, _ := setup()
-	idp.clients["payments-mcp"] = courier.ClientRef{ClientID: "cid-payments-mcp"}
+	idp.clients["payments-mcp"] = courier.ClientRef{ClientID: cidPaymentsMCP}
 	idp.secrets["payments-mcp"] = "old-secret-nobody-has"
 
 	res, err := b.Ensure(context.Background(), confidentialSpec(), Prior{})
@@ -235,7 +241,7 @@ func TestEnsurePublicClientStoresNoSecret(t *testing.T) {
 	b, idp, store, log := setup()
 	spec := courier.ClientSpec{
 		Name:         "ide-plugin",
-		OwnerGroup:   "team-payments",
+		OwnerGroup:   teamPayments,
 		Type:         courier.ClientTypePublic,
 		GrantTypes:   []string{courier.GrantAuthorizationCode},
 		RedirectURIs: []string{"http://localhost:8250/callback"},
@@ -250,7 +256,7 @@ func TestEnsurePublicClientStoresNoSecret(t *testing.T) {
 	if len(idp.secrets) != 0 {
 		t.Fatal("public client must not get an IdP secret")
 	}
-	if store.data[p]["state"] != "active" {
+	if store.data[p]["state"] != stateActive {
 		t.Fatalf("want active, got %v (%q)", store.data[p], *log)
 	}
 }
@@ -292,12 +298,12 @@ func TestInvalidSpecTouchesNothing(t *testing.T) {
 
 func TestSecretNeverFormats(t *testing.T) {
 	s := courier.NewSecret("s3cr3t-value")
+	j, _ := json.Marshal(struct{ S courier.Secret }{s})
 	outputs := []string{
 		fmt.Sprint(s), fmt.Sprintf("%v %+v %#v %s", s, s, s, s),
 		fmt.Sprintf("%+v", secretstore.Record{ClientSecret: s}),
+		string(j),
 	}
-	j, _ := json.Marshal(struct{ S courier.Secret }{s})
-	outputs = append(outputs, string(j))
 	for _, o := range outputs {
 		if strings.Contains(o, "s3cr3t") {
 			t.Fatalf("secret leaked in %q", o)

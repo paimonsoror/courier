@@ -1,0 +1,20 @@
+# Guardrail for request sync: whatever lands in requests/, ArgoCD may only
+# create OAuthClient objects, only in team-* namespaces, only from this repo.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: courier-requests
+  namespace: argocd
+spec:
+  description: Team OAuth client requests (OAuthClient objects only)
+  sourceRepos:
+    - https://github.com/paimonsoror/courier.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "team-*"
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: courier.sororlab.dev
+      kind: OAuthClient

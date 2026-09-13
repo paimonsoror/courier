@@ -1,0 +1,24 @@
+# The Courier controller itself (CRD, RBAC, manager), from the homelab overlay.
+# The image is imported into k3s containerd by deploy/phase1/deploy-controller.sh.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: courier-controller
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: courier
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/paimonsoror/courier.git
+    targetRevision: main
+    path: deploy/phase1/controller
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: courier-system
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

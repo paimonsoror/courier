@@ -31,7 +31,9 @@ func TestValidate(t *testing.T) {
 		{"auth code without redirect", func(s *ClientSpec) { s.RedirectURIs = nil }, "requires at least one redirect URI"},
 		{"wildcard redirect", func(s *ClientSpec) { s.RedirectURIs = []string{"https://*.example/cb"} }, "wildcards"},
 		{"http redirect", func(s *ClientSpec) { s.RedirectURIs = []string{"http://mcp.example/cb"} }, "must use https"},
-		{"loopback on confidential", func(s *ClientSpec) { s.RedirectURIs = []string{"http://localhost:8250/cb"} }, "only allowed for public"},
+		{"loopback on confidential", func(s *ClientSpec) {
+			s.RedirectURIs = []string{"http://localhost:8250/cb"}
+		}, "only allowed for public"},
 		{"loopback on public", func(s *ClientSpec) {
 			s.Type = ClientTypePublic
 			s.RedirectURIs = []string{"http://127.0.0.1:8250/cb"}

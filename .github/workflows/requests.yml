@@ -1,0 +1,45 @@
+name: Client requests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - "requests/**"
+  push:
+    branches: [main]
+    paths:
+      - "requests/**"
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate requests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Validate with controller rules and repository policy
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+        run: |
+          changed="$(git diff --name-only "$BASE_SHA" HEAD -- requests/ | paste -sd, -)"
+          go run ./cmd/courier validate \
+            --labels "$LABELS" \
+            --changed "$changed" \
+            --enforce-approvals="$IS_PR" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            requests

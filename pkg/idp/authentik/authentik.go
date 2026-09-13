@@ -15,7 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -151,7 +151,9 @@ func (p *Provider) Lookup(ctx context.Context, name string) (courier.ClientRef, 
 }
 
 // EnsureClient creates or updates the provider, application and group bindings.
-func (p *Provider) EnsureClient(ctx context.Context, spec courier.ClientSpec, secret courier.Secret) (courier.ClientRef, error) {
+func (p *Provider) EnsureClient(
+	ctx context.Context, spec courier.ClientSpec, secret courier.Secret,
+) (courier.ClientRef, error) {
 	spec = spec.Normalize()
 	existing, found, err := p.Lookup(ctx, spec.Name)
 	if err != nil {
@@ -227,7 +229,8 @@ func (p *Provider) EnsureClient(ctx context.Context, spec courier.ClientSpec, se
 	}
 	var app application
 	if found {
-		err = p.send(ctx, http.MethodPatch, "core/applications/"+url.PathEscape(spec.Name)+"/", appBody, &app, courier.Secret{})
+		appPath := "core/applications/" + url.PathEscape(spec.Name) + "/"
+		err = p.send(ctx, http.MethodPatch, appPath, appBody, &app, courier.Secret{})
 	} else {
 		err = p.send(ctx, http.MethodPost, "core/applications/", appBody, &app, courier.Secret{})
 	}
@@ -389,12 +392,14 @@ func (p *Provider) syncBindings(ctx context.Context, appPK string, groups map[st
 	for pk := range groups {
 		pks = append(pks, pk)
 	}
-	sort.Strings(pks)
+	slices.Sort(pks)
 	for _, pk := range pks {
 		if have[pk] {
 			continue
 		}
-		body := map[string]any{"target": appPK, "group": pk, "order": nextOrder, "enabled": true, "negate": false, "timeout": 30}
+		body := map[string]any{
+			"target": appPK, "group": pk, "order": nextOrder, "enabled": true, "negate": false, "timeout": 30,
+		}
 		if err := p.send(ctx, http.MethodPost, "policies/bindings/", body, nil, courier.Secret{}); err != nil {
 			return err
 		}
@@ -408,7 +413,7 @@ func (p *Provider) get(ctx context.Context, path string, out any) (bool, error) 
 	if err != nil {
 		return false, fmt.Errorf("authentik: GET %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return false, nil
 	}
@@ -430,7 +435,7 @@ func (p *Provider) send(ctx context.Context, method, path string, body, out any,
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return fmt.Errorf("%s %s: %w", method, path, apiError(resp, secret))
 	}
@@ -445,7 +450,7 @@ func (p *Provider) del(ctx context.Context, path string) error {
 	if err != nil {
 		return fmt.Errorf("DELETE %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusNoContent, http.StatusNotFound:
 		return nil

@@ -33,8 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	courierv1alpha1 "github.com/paimonsoror/courier/api/v1alpha1"
+	"github.com/paimonsoror/courier/internal/request"
 	"github.com/paimonsoror/courier/pkg/broker"
-	"github.com/paimonsoror/courier/pkg/courier"
 	"github.com/paimonsoror/courier/pkg/idp"
 )
 
@@ -65,7 +65,7 @@ func (r *OAuthClientReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.Get(ctx, req.NamespacedName, &oc); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	spec := toClientSpec(&oc)
+	spec := request.ToClientSpec(&oc)
 
 	if !oc.DeletionTimestamp.IsZero() {
 		if !controllerutil.ContainsFinalizer(&oc, finalizerName) {
@@ -86,7 +86,7 @@ func (r *OAuthClientReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	if err := validate(&oc, spec); err != nil {
+	if err := request.CheckClient(&oc); err != nil {
 		// Nothing was created; wait for the spec to change.
 		r.setReady(&oc, metav1.ConditionFalse, "InvalidSpec", err.Error())
 		return ctrl.Result{}, r.Status().Update(ctx, &oc)
@@ -131,38 +131,6 @@ func (r *OAuthClientReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{RequeueAfter: r.ResyncPeriod}, nil
-}
-
-// toClientSpec maps the CR onto the core spec. The IdP-side name is
-// <namespace>-<name> so two teams can reuse a resource name without colliding.
-func toClientSpec(oc *courierv1alpha1.OAuthClient) courier.ClientSpec {
-	owner := oc.Spec.OwnerGroup
-	if owner == "" {
-		owner = oc.Namespace
-	}
-	display := oc.Spec.DisplayName
-	if display == "" {
-		display = oc.Namespace + "/" + oc.Name
-	}
-	return courier.ClientSpec{
-		Name:         oc.Namespace + "-" + oc.Name,
-		DisplayName:  display,
-		OwnerGroup:   owner,
-		Type:         courier.ClientType(oc.Spec.ClientType),
-		GrantTypes:   oc.Spec.GrantTypes,
-		RedirectURIs: oc.Spec.RedirectURIs,
-		Scopes:       oc.Spec.Scopes,
-		AllowGroups:  oc.Spec.AllowGroups,
-	}
-}
-
-// validate enforces tenancy (a namespace can only request clients for its own
-// group) plus the core spec rules.
-func validate(oc *courierv1alpha1.OAuthClient, spec courier.ClientSpec) error {
-	if spec.OwnerGroup != oc.Namespace {
-		return fmt.Errorf("ownerGroup %q must match the namespace %q", spec.OwnerGroup, oc.Namespace)
-	}
-	return spec.Normalize().Validate()
 }
 
 func (r *OAuthClientReconciler) setReady(oc *courierv1alpha1.OAuthClient, status metav1.ConditionStatus, reason, msg string) {
