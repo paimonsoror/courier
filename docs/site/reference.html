@@ -19,6 +19,7 @@
     <a href="how-it-works.html">How it works</a>
     <a href="walkthrough.html">Walkthrough</a>
     <a href="request-a-client.html">Request a client</a>
+    <a href="use-credentials.html">Use credentials</a>
     <a href="implementation.html">Implementation guide</a>
     <a href="reference.html" aria-current="page">Reference</a>
   </nav>
@@ -39,6 +40,9 @@
       <li><a href="#vault-policies">Vault policies</a></li>
       <li><a href="#idp-objects">IdP objects</a></li>
       <li><a href="#argocd">ArgoCD objects</a></li>
+      <li><a href="#team-access">Team access</a></li>
+      <li><a href="#python-api">Python sample API</a></li>
+      <li><a href="#image-ref">Controller image</a></li>
     </ol>
   </nav>
 
@@ -259,6 +263,56 @@ path "kv/metadata/teams/+/oauth-clients/*" {
             <tr><td>AppProject <code>courier-requests</code></td><td>Source: this repository. Destinations: <code>team-*</code>. Namespaced kinds: <code>courier.sororlab.dev/OAuthClient</code>. Cluster kinds: <code>Namespace</code>.</td></tr>
             <tr><td>ApplicationSet <code>courier-requests</code></td><td>Git directory generator on <code>requests/*</code>; includes <code>*.yaml</code>; automated sync with prune and self-heal; <code>CreateNamespace=true</code></td></tr>
             <tr><td>Application <code>courier-controller</code></td><td>Path <code>deploy/phase1/controller</code>; namespace <code>courier-system</code>; server-side apply</td></tr>
+            <tr><td>AppProject <code>courier-team-access</code></td><td>Source: this repository. Destinations: <code>team-*</code>. Namespaced kinds: <code>ServiceAccount</code>, <code>external-secrets.io/SecretStore</code>. Cluster kinds: <code>Namespace</code>.</td></tr>
+            <tr><td>ApplicationSet <code>courier-team-access</code></td><td>Git directory generator on <code>requests/*</code>; renders chart <code>deploy/team-access</code> with <code>team=&lt;dir&gt;</code>; automated sync with prune and self-heal</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="team-access">
+      <h2>Team access</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Object</th><th>Where</th><th>Settings</th></tr></thead>
+          <tbody>
+            <tr><td>ServiceAccount <code>courier-secrets</code></td><td>each <code>team-*</code> namespace</td><td><code>automountServiceAccountToken: false</code></td></tr>
+            <tr><td>SecretStore <code>courier-vault</code></td><td>each <code>team-*</code> namespace</td><td>Vault provider, server <code>http://vault-active.vault.svc:8200</code>, path <code>kv</code>, version <code>v2</code>, Kubernetes auth mount <code>kubernetes</code>, role <code>&lt;team&gt;</code>, service account <code>courier-secrets</code></td></tr>
+            <tr><td>Vault role <code>auth/kubernetes/role/&lt;team&gt;</code></td><td>Vault</td><td>Bound to <code>&lt;team&gt;/courier-secrets</code>; policy <code>&lt;team&gt;</code>; TTL 1h, max 4h</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Chart values (<code>deploy/team-access/values.yaml</code>): <code>team</code> (required), <code>serviceAccountName</code>, <code>vault.server</code>, <code>vault.kvMount</code>, <code>vault.authMount</code>.</p>
+      <p>ExternalSecret key for a request: <code>teams/&lt;team&gt;/oauth-clients/&lt;team&gt;-&lt;name&gt;</code> (without the <code>kv/</code> mount). With <code>dataFrom.extract</code>, the Secret has one key per <a href="#vault-layout">vault field</a>.</p>
+    </section>
+
+    <section id="python-api">
+      <h2>Python sample API</h2>
+      <p>Module <code>samples/python/courier_credentials.py</code>, requires <code>hvac==2.4.0</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Signature</th><th>Behavior</th></tr></thead>
+          <tbody>
+            <tr><td><code>vault_client</code></td><td><code>(addr=None, *, method=None, role=None, mount=None, jwt=None, namespace=None) → hvac.Client</code></td><td>Signs in with <code>token</code>, <code>jwt</code> or <code>kubernetes</code>; raises <code>PermissionError</code> if not authenticated</td></tr>
+            <tr><td><code>read_credentials</code></td><td><code>(client, team, name, *, kv_mount="kv") → OAuthClientCredentials</code></td><td>Reads the entry; raises <code>PermissionError</code> (forbidden), <code>LookupError</code> (missing), <code>CredentialsNotReady</code> (not active)</td></tr>
+            <tr><td><code>client_credentials_token</code></td><td><code>(creds, *, scope=None, extra=None) → dict</code></td><td>POSTs to <code>token_endpoint</code>; <code>extra</code> adds provider-specific form fields</td></tr>
+            <tr><td><code>OAuthClientCredentials</code></td><td>frozen dataclass</td><td><code>path, client_id, client_type, client_secret (hidden from repr), grant_types, scopes, issuer, token_endpoint, authorization_endpoint, jwks_uri, userinfo_endpoint, owner_group</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Environment: <code>VAULT_ADDR</code>, <code>COURIER_VAULT_AUTH</code>, <code>VAULT_TOKEN</code>, <code>COURIER_JWT</code>, <code>COURIER_JWT_FILE</code>, <code>COURIER_SA_TOKEN_FILE</code>, <code>VAULT_ROLE</code>, <code>VAULT_NAMESPACE</code>.</p>
+    </section>
+
+    <section id="image-ref">
+      <h2>Controller image</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Repository</td><td><code>ghcr.io/paimonsoror/courier-controller</code> (public)</td></tr>
+            <tr><td>Tags</td><td><code>sha-&lt;short commit&gt;</code> for every build; <code>main</code> for the latest</td></tr>
+            <tr><td>Built by</td><td><code>.github/workflows/controller-image.yml</code>, <code>linux/amd64</code></td></tr>
+            <tr><td>Deployed</td><td>By digest from <code>deploy/phase1/controller/kustomization.yaml</code>; <code>imagePullPolicy: IfNotPresent</code></td></tr>
           </tbody>
         </table>
       </div>

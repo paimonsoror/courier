@@ -19,6 +19,7 @@
     <a href="how-it-works.html">How it works</a>
     <a href="walkthrough.html" aria-current="page">Walkthrough</a>
     <a href="request-a-client.html">Request a client</a>
+    <a href="use-credentials.html">Use credentials</a>
     <a href="implementation.html">Implementation guide</a>
     <a href="reference.html">Reference</a>
   </nav>
@@ -322,10 +323,19 @@ identity group team-bravo-jwt   alias team-bravo on jwt/   →  policy team-brav
           </ul>
         </div>
       </div>
-      <div class="callout">
-        <span class="label">Next for team-bravo</span>
-        <p>This phase adds two easier ways to consume the credentials: an External Secrets sync that places them in a Kubernetes Secret in <code>team-bravo</code>, and a Python sample that reads them with the workload's own identity. They will be recorded here with the same evidence once verified.</p>
+      <h3>Added since: two ready-made ways to consume</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Capability</th><th>What team-bravo gets</th><th>Verified</th></tr></thead>
+          <tbody>
+            <tr><td>Vault connection in its namespace</td><td>ServiceAccount <code>courier-secrets</code> and SecretStore <code>courier-vault</code>, created automatically by ArgoCD application <code>courier-team-access-team-bravo</code></td><td><span class="pill p-good">Ready</span></td></tr>
+            <tr><td>External Secrets sync</td><td>ExternalSecret <code>report-exporter-oauth</code> produces a Secret with all 14 fields; the synced credentials obtain a token</td><td><span class="pill p-good">22:19:44</span> vault read ok</td></tr>
+            <tr><td>Python sample</td><td><code>read_credentials(vault_client(), "team-bravo", "report-exporter")</code> as the workload's own identity, then a one-hour bearer token</td><td><span class="pill p-good">passed</span></td></tr>
+            <tr><td>Isolation from other teams</td><td>team-alpha's store and team-alpha's workload are both refused on this path</td><td><span class="pill p-good">permission denied</span> in the vault audit log</td></tr>
+          </tbody>
+        </table>
       </div>
+      <p>Details and full output: <a href="use-credentials.html#evidence">Use your credentials</a>.</p>
     </section>
 
     <section id="after">

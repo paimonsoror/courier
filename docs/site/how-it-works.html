@@ -19,6 +19,7 @@
     <a href="how-it-works.html" aria-current="page">How it works</a>
     <a href="walkthrough.html">Walkthrough</a>
     <a href="request-a-client.html">Request a client</a>
+    <a href="use-credentials.html">Use credentials</a>
     <a href="implementation.html">Implementation guide</a>
     <a href="reference.html">Reference</a>
   </nav>
@@ -63,7 +64,9 @@
             <tr><td><strong>Controller</strong></td><td>Turns each <code>OAuthClient</code> into an IdP client plus stored credentials, and reports status</td><td>Kubernetes namespace <code>courier-system</code></td></tr>
             <tr><td><strong>Core library</strong></td><td>All IdP and vault logic, including the ordered write; no Kubernetes dependency, so a CLI or CI job can reuse it</td><td><code>pkg/</code></td></tr>
             <tr><td><strong>Identity provider</strong></td><td>Holds the OAuth client and the groups that may use it and read its secret</td><td>Authentik (Okta adapter planned)</td></tr>
-            <tr><td><strong>Vault</strong></td><td>The only place a client secret is stored; access granted by identity group</td><td>Vault CE, KV v2 mount <code>kv/</code></td></tr>
+            <tr><td><strong>Vault</strong></td><td>The only place Courier stores a client secret; access granted by identity group</td><td>Vault CE, KV v2 mount <code>kv/</code></td></tr>
+            <tr><td><strong>Team access</strong></td><td>Per team: a service account and an External Secrets store that can read only that team's credentials</td><td>ArgoCD <code>courier-team-access-&lt;team&gt;</code>, <code>deploy/team-access</code></td></tr>
+            <tr><td><strong>Consumers</strong></td><td>People (Vault CLI), workloads (Python sample), Kubernetes apps (External Secrets)</td><td><a href="use-credentials.html">Use your credentials</a></td></tr>
           </tbody>
         </table>
       </div>
@@ -99,7 +102,7 @@
           <span class="label">Consume</span>
           <h4>Team</h4>
           <div class="node"><b>People</b><small>vault login via OIDC</small></div>
-          <div class="node"><b>Workloads</b><small>JWT or Kubernetes auth</small></div>
+          <div class="node"><b>Workloads</b><small>JWT, Kubernetes auth or External Secrets</small></div>
         </div>
       </div>
       <p class="flow-caption">Amber marks the only place a secret is written. Status visible to anyone with access to the request never contains it.</p>
@@ -152,12 +155,13 @@
             <tr><td>Controller (vault)</td><td>Create, update, patch and delete under <code>kv/teams/+/oauth-clients/</code></td><td>Read any secret, including ones it wrote</td></tr>
             <tr><td>Controller (IdP)</td><td>Manage OAuth providers, applications and bindings; view flows, groups, keys and scope mappings</td><td>Manage users, change group membership, alter login flows; modify apps it did not create</td></tr>
             <tr><td>Team member</td><td>Read their own team's vault path</td><td>Read another team's path</td></tr>
+            <tr><td>Team's External Secrets store</td><td>Read its own team's vault path into a Secret in that namespace</td><td>Read another team's path; write to the vault (policy is read-only)</td></tr>
           </tbody>
         </table>
       </div>
       <div class="callout secret">
         <span class="label">Where the secret exists</span>
-        <p>In the controller's memory between generation and the vault write, in the vault, and in the IdP (which must know it to validate the client). Never in Git, in Kubernetes objects, in CI logs or in controller logs.</p>
+        <p>In the controller's memory between generation and the vault write, in the vault, and in the IdP (which must know it to validate the client). Never in Git, CI logs or controller logs, and Courier never writes it into Kubernetes. A copy appears in a Kubernetes Secret only if the owning team chooses External Secrets, and only in that team's namespace.</p>
       </div>
     </section>
 

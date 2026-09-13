@@ -19,6 +19,7 @@
     <a href="how-it-works.html">How it works</a>
     <a href="walkthrough.html">Walkthrough</a>
     <a href="request-a-client.html">Request a client</a>
+    <a href="use-credentials.html">Use credentials</a>
     <a href="implementation.html" aria-current="page">Implementation guide</a>
     <a href="reference.html">Reference</a>
   </nav>
@@ -35,6 +36,8 @@
       <li><a href="#vault-config">3. Vault access model</a></li>
       <li><a href="#controller">4. Controller</a></li>
       <li><a href="#gitops">5. Pull request workflow</a></li>
+      <li><a href="#workloads">6. Workload access</a></li>
+      <li><a href="#image">7. Controller image</a></li>
       <li><a href="#verify">Verification</a></li>
       <li><a href="#operate">Day-2 operations</a></li>
       <li><a href="#troubleshoot">Troubleshooting</a></li>
@@ -79,6 +82,8 @@
         <li><div><span class="who">vault access</span><p>Initialize Vault; map identity groups to per-team policies; prove group-gated reads.</p></div></li>
         <li><div><span class="who">controller</span><p>Give the controller its own vault and IdP identities; build and deploy it; run the acceptance test.</p></div></li>
         <li><div><span class="who">pull requests</span><p>Register the ArgoCD project and ApplicationSet; protect the branch; create the approval label.</p></div></li>
+        <li><div><span class="who">workload access</span><p>Install External Secrets; create per-team vault roles; let ArgoCD place a store in every team namespace.</p></div></li>
+        <li><div><span class="who">image</span><p>Build the controller in CI, push to the registry, and pin the deployment to the image digest.</p></div></li>
       </ol>
     </section>
 
@@ -159,8 +164,8 @@ deploy/phase1/acceptance.sh                    <span class="c"># must print PHAS
       <p>Controller configuration is set by <code>deploy/phase1/controller/manager-wiring.yaml</code>; every flag is listed in the <a href="reference.html#controller">reference</a>.</p>
       <p>Optional developer check against the real systems: <code>deploy/phase1/integration-test.sh</code>.</p>
       <div class="callout">
-        <span class="label">No registry in the reference environment</span>
-        <p>The image is built on the node and imported with <code>docker save courier-controller:dev | sudo k3s ctr images import -</code>, and the manager uses <code>imagePullPolicy: Never</code>. With a registry, push the image and change the overlay's <code>images</code> entry.</p>
+        <span class="label">Image source</span>
+        <p>The overlay pins <code>ghcr.io/paimonsoror/courier-controller</code> by digest (see <a href="#image">section 7</a>). <code>deploy-controller.sh</code> remains for building and importing a local image when no registry is available.</p>
       </div>
     </section>
 
@@ -193,11 +198,61 @@ deploy/phase1/acceptance.sh                    <span class="c"># must print PHAS
       <ol class="seq">
         <li><div><span class="who">identity provider</span><p>Create the group (for example <code>team-payments</code>).</p></div></li>
         <li><div><span class="who">vault</span><p>Add the team to the group list in <code>vault-bootstrap.sh</code> and re-run it to create the team policy and both identity groups.</p></div></li>
-        <li><div><span class="who">repository</span><p>Add <code>requests/team-payments/</code> with its first request, and a CODEOWNERS line for the team's approvers.</p></div></li>
+        <li><div><span class="who">repository</span><p>Add <code>requests/team-payments/</code> with its first request, and a CODEOWNERS line for the team's approvers. ArgoCD creates both the request application and the team-access application for the new directory.</p></div></li>
+        <li><div><span class="who">vault</span><p>Re-run <code>deploy/phase2/vault-team-roles.sh</code> so the team's External Secrets store can sign in.</p></div></li>
       </ol>
       <div class="callout warn">
         <span class="label">Known gap</span>
         <p>Team onboarding in vault is still a script edit. A <code>Team</code> resource that manages the policy and identity groups is planned.</p>
+      </div>
+    </section>
+
+    <section id="workloads">
+      <h2>6. Workload access</h2>
+      <h3>Install External Secrets</h3>
+      <p>Add chart <code>external-secrets</code> version <code>2.10.0</code> from <code>https://charts.external-secrets.io</code> to your app-of-apps, namespace <code>external-secrets</code>, with <code>installCRDs: true</code> and sync options <code>CreateNamespace=true</code> and <code>ServerSideApply=true</code>.</p>
+      <div class="callout warn">
+        <span class="label">Order matters</span>
+        <p>Wait until the External Secrets webhook is ready before ArgoCD creates any <code>SecretStore</code>. An automated sync that fails because a CRD or webhook is missing is not retried for the same Git revision, so the team-access applications would stay failed until the next commit or a manual sync.</p>
+      </div>
+      <h3>Per-team vault roles</h3>
+<pre><code>deploy/phase2/vault-team-roles.sh
+<span class="c"># role auth/kubernetes/role/team-alpha -> team-alpha/courier-secrets (policy team-alpha)</span>
+<span class="c"># role auth/kubernetes/role/team-bravo -> team-bravo/courier-secrets (policy team-bravo)</span></code></pre>
+      <p>One role per directory under <code>requests/</code>, bound to that namespace's <code>courier-secrets</code> service account, carrying only that team's policy. Teams without a vault policy are skipped.</p>
+      <h3>Per-team stores</h3>
+      <p>The <code>courier</code> ArgoCD application also syncs:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Object</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>AppProject <code>courier-team-access</code></td><td>Only <code>ServiceAccount</code> and <code>SecretStore</code> (plus the namespace), only in <code>team-*</code></td></tr>
+            <tr><td>ApplicationSet <code>courier-team-access</code></td><td>One application per team directory rendering <code>deploy/team-access</code> with <code>team=&lt;dir&gt;</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Verify</h3>
+<pre><code>deploy/phase2/verify-external-secrets.sh    <span class="c"># EXTERNAL SECRETS VERIFIED</span>
+samples/python/verify.sh team-bravo report-exporter   <span class="c"># PYTHON SAMPLE VERIFIED</span></code></pre>
+    </section>
+
+    <section id="image">
+      <h2>7. Controller image</h2>
+      <p>Workflow <code>.github/workflows/controller-image.yml</code> runs on every push to <code>main</code> that touches Go code, <code>go.mod</code> or the Dockerfile. It pushes <code>ghcr.io/paimonsoror/courier-controller</code> with two tags: <code>sha-&lt;short commit&gt;</code> and <code>main</code>.</p>
+      <p>The deployment never follows a moving tag. <code>deploy/phase1/controller/kustomization.yaml</code> pins a digest:</p>
+<pre><code><span class="k">images</span>:
+  - <span class="k">name</span>: controller
+    <span class="k">newName</span>: ghcr.io/paimonsoror/courier-controller
+    <span class="k">digest</span>: sha256:ada7be47e996b26c10f7d358396ef2d267a0ee7cfc8e0534220eec9c5400e35e   <span class="c"># sha-2ed3a9d</span></code></pre>
+      <h3>Upgrade procedure</h3>
+      <ol class="seq">
+        <li><div><span class="who">developer</span><p>Merge the change; wait for <strong>Controller image</strong> to succeed.</p></div></li>
+        <li><div><span class="who">developer</span><p>Resolve the digest of <code>sha-&lt;short commit&gt;</code> (registry UI, or <code>crane digest ghcr.io/paimonsoror/courier-controller:sha-&lt;short&gt;</code>).</p></div></li>
+        <li><div><span class="who">developer</span><p>Update the digest in the overlay in a pull request. After merge, ArgoCD rolls out the new controller.</p></div></li>
+      </ol>
+      <div class="callout">
+        <span class="label">Package visibility</span>
+        <p>New GitHub container packages are private by default. The cluster pulls anonymously, so the package must be public, or the cluster needs an image pull secret.</p>
       </div>
     </section>
 
@@ -215,6 +270,10 @@ deploy/phase1/acceptance.sh                    <span class="c"># must print PHAS
             <tr><td>Sync healthy</td><td><code>kubectl -n argocd get applications -l app.kubernetes.io/part-of=courier</code></td><td>All <code>Synced</code> and <code>Healthy</code></td></tr>
             <tr><td>Requests ready</td><td><code>kubectl get oauthclients -A</code></td><td><code>READY True</code> for every request</td></tr>
             <tr><td>Merged request is usable by its team only</td><td><code>deploy/phase2/check-access.sh &lt;team&gt; &lt;name&gt;</code></td><td><code>ACCESS CHECK PASSED</code></td></tr>
+            <tr><td>Everything a request created, per platform</td><td><code>deploy/phase2/inventory.sh &lt;team&gt; &lt;name&gt;</code></td><td>Objects, Authentik events, vault audit entries</td></tr>
+            <tr><td>Python sample</td><td><code>samples/python/verify.sh &lt;team&gt; &lt;name&gt;</code></td><td><code>PYTHON SAMPLE VERIFIED</code></td></tr>
+            <tr><td>External Secrets per team</td><td><code>deploy/phase2/verify-external-secrets.sh</code></td><td><code>EXTERNAL SECRETS VERIFIED</code></td></tr>
+            <tr><td>Controller runs the pinned image</td><td><code>kubectl -n courier-system get pod -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'</code></td><td>The digest in the overlay</td></tr>
           </tbody>
         </table>
       </div>
@@ -232,7 +291,7 @@ deploy/phase1/acceptance.sh                    <span class="c"># must print PHAS
           <tbody>
             <tr><td>Why is a request not ready?</td><td><code>kubectl -n &lt;team&gt; describe oauthclient &lt;name&gt;</code> for the condition reason; <code>kubectl -n courier-system logs deploy/courier-controller-manager</code> for detail</td></tr>
             <tr><td>Force a new secret</td><td>Remove the request and add it back in a second pull request. A rotate annotation is planned.</td></tr>
-            <tr><td>Upgrade the controller</td><td>Rebuild the image (or push to your registry), then <code>kubectl -n courier-system rollout restart deploy/courier-controller-manager</code></td></tr>
+            <tr><td>Upgrade the controller</td><td>Update the image digest in the overlay by pull request (<a href="#image">section 7</a>); ArgoCD rolls it out</td></tr>
             <tr><td>Who read a secret?</td><td>Vault audit log at <code>/vault/audit/audit.log</code>; ship it to your log platform</td></tr>
             <tr><td>Rotate the controller's IdP token</td><td>Delete token <code>courier-controller-api</code> in Authentik and re-run <code>authentik-controller-account.sh</code>, then restart the controller</td></tr>
             <tr><td>Remove a stuck object</td><td>Fix the cause first. Removing the finalizer by hand skips deletion of the IdP client and the secret.</td></tr>
@@ -256,6 +315,10 @@ deploy/phase1/acceptance.sh                    <span class="c"># must print PHAS
             <tr><td>A setup script re-run tries to recreate an existing Authentik application</td><td>The applications list endpoint ignores <code>?slug=</code></td><td>Look applications up with <code>core/applications/&lt;slug&gt;/</code></td></tr>
             <tr><td>Request <code>Ready=False</code>, reason <code>NameConflict</code></td><td>An application with slug <code>&lt;team&gt;-&lt;name&gt;</code> exists and was not created by Courier</td><td>Rename the request, or retire the old application</td></tr>
             <tr><td>Vault hostname resolves on some machines only</td><td>Record created in the wrong zone, or the secondary DNS server has not synced</td><td>Point the record at the ingress name in the current domain; check zone transfer to secondaries</td></tr>
+            <tr><td>Vault entry version number climbs every few minutes</td><td>Controllers before <code>2ed3a9d</code> rewrote metadata on every resync</td><td>Run the pinned image at or after <code>sha-2ed3a9d</code>; metadata is now written only when the request changes</td></tr>
+            <tr><td>Team <code>SecretStore</code> not Ready</td><td>No Kubernetes auth role for the team</td><td>Run <code>deploy/phase2/vault-team-roles.sh</code></td></tr>
+            <tr><td>ExternalSecret <code>SecretSyncedError</code>: <code>could not get secret data from provider</code></td><td>Path belongs to another team, or the request is not Ready</td><td>Check the vault audit log for <em>permission denied</em> against the store's identity; check the request status</td></tr>
+            <tr><td>Team-access applications stuck after installing External Secrets</td><td>Automated sync failed before the CRD or webhook existed and is not retried for the same revision</td><td>Sync the applications once by hand, or push a new commit</td></tr>
           </tbody>
         </table>
       </div>
@@ -272,7 +335,8 @@ deploy/phase1/acceptance.sh                    <span class="c"># must print PHAS
             <tr><td>Traffic inside the cluster</td><td>TLS terminates at the ingress; Vault listens on plain HTTP in-cluster</td><td>Enable Vault listener TLS and use <code>https://</code> for <code>VAULT_ADDR</code></td></tr>
             <tr><td>Vault <code>vault-admin</code> policy</td><td><code>path "*"</code> with every capability</td><td>Split into scoped operator policies</td></tr>
             <tr><td>Audit</td><td>File audit device on a volume</td><td>Ship to a central log platform with retention and alerts</td></tr>
-            <tr><td>Controller image</td><td>Built on the node, <code>imagePullPolicy: Never</code></td><td>Signed image from a registry, pinned by digest</td></tr>
+            <tr><td>Controller image</td><td>Built in GitHub Actions, public on GHCR, pinned by digest</td><td>Also sign the image and verify signatures at admission</td></tr>
+            <tr><td>Credentials in Kubernetes Secrets</td><td>Only where a team adds an ExternalSecret</td><td>Encryption at rest for Secrets; tight RBAC on Secrets in team namespaces; prefer direct vault reads</td></tr>
             <tr><td>Branch protection</td><td>Configured by hand</td><td>Managed as code, with bypass disabled for administrators</td></tr>
             <tr><td>Kubernetes auth audience</td><td>Unset (Vault warns)</td><td>Set <code>audience</code> on the <code>courier</code> role and in the projected token</td></tr>
           </tbody>
