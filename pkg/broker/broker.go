@@ -18,6 +18,10 @@ import (
 type Prior struct {
 	// Delivered is true once credentials were stored and promoted to active.
 	Delivered bool
+	// SpecChanged is true when the request changed since it was last
+	// reconciled. Stored metadata is only rewritten then: every KV v2 write
+	// creates a new version, so periodic resyncs must not write.
+	SpecChanged bool
 }
 
 // Result describes what Ensure did.
@@ -54,14 +58,17 @@ func (b *Broker) Ensure(ctx context.Context, spec courier.ClientSpec, prior Prio
 		return Result{}, fmt.Errorf("look up client %q in %s: %w", spec.Name, b.IDP.Name(), err)
 	}
 
-	// Already delivered: converge IdP settings and refresh metadata, keep the secret.
+	// Already delivered: converge IdP settings (repairs drift), keep the secret,
+	// and refresh stored metadata only if the request changed.
 	if found && prior.Delivered {
 		ref, err := b.IDP.EnsureClient(ctx, spec, courier.Secret{})
 		if err != nil {
 			return Result{Path: path}, fmt.Errorf("update client %q in %s: %w", spec.Name, b.IDP.Name(), err)
 		}
-		if err := b.Store.Patch(ctx, path, b.record(spec, ref, courier.Secret{}, secretstore.StateActive)); err != nil {
-			return Result{Ref: ref, Path: path}, fmt.Errorf("refresh metadata at %s: %w", path, err)
+		if prior.SpecChanged {
+			if err := b.Store.Patch(ctx, path, b.record(spec, ref, courier.Secret{}, secretstore.StateActive)); err != nil {
+				return Result{Ref: ref, Path: path}, fmt.Errorf("refresh metadata at %s: %w", path, err)
+			}
 		}
 		return Result{Ref: ref, Path: path}, nil
 	}

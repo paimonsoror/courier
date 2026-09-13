@@ -98,7 +98,10 @@ func (r *OAuthClientReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	res, err := r.Broker.Ensure(ctx, spec, broker.Prior{Delivered: oc.Status.CredentialsDelivered})
+	res, err := r.Broker.Ensure(ctx, spec, broker.Prior{
+		Delivered:   oc.Status.CredentialsDelivered,
+		SpecChanged: oc.Generation != oc.Status.ObservedGeneration,
+	})
 	oc.Status.ObservedGeneration = oc.Generation
 	oc.Status.IdentityProvider = r.Broker.IDP.Name()
 	if res.Path != "" {

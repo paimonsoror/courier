@@ -200,7 +200,7 @@ func TestEnsureDeliveredClientKeepsSecret(t *testing.T) {
 
 	spec := confidentialSpec()
 	spec.Scopes = []string{"openid", "email"}
-	res, err := b.Ensure(ctx, spec, Prior{Delivered: true})
+	res, err := b.Ensure(ctx, spec, Prior{Delivered: true, SpecChanged: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,6 +217,27 @@ func TestEnsureDeliveredClientKeepsSecret(t *testing.T) {
 	}
 	if store.data[path]["scopes"] != "openid email" {
 		t.Fatalf("metadata not refreshed: %v", store.data[path])
+	}
+}
+
+func TestEnsureResyncOfUnchangedRequestWritesNothing(t *testing.T) {
+	b, idp, _, log := setup()
+	ctx := context.Background()
+	if _, err := b.Ensure(ctx, confidentialSpec(), Prior{}); err != nil {
+		t.Fatal(err)
+	}
+	*log = nil
+
+	if _, err := b.Ensure(ctx, confidentialSpec(), Prior{Delivered: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range *log {
+		if strings.HasPrefix(e, "store.") {
+			t.Fatalf("resync of an unchanged request wrote to the store: %q", *log)
+		}
+	}
+	if len(idp.clients) != 1 {
+		t.Fatal("resync should still converge the IdP client")
 	}
 }
 

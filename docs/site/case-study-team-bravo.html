@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What PR #1 Did for Team Bravo</title>
+<meta name="description" content="The proof-of-value request in full: the goal, the one-file pull request, what happened on merge to the second, every object created in GitHub, ArgoCD, Kubernetes, Authentik and Vault, and what team-bravo can do now.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/courier.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Courier <small>OAuth client delivery</small></a>
+  <nav class="site-nav" aria-label="Documentation">
+    <a href="index.html">Overview</a>
+    <a href="how-it-works.html">How it works</a>
+    <a href="walkthrough.html" aria-current="page">Walkthrough</a>
+    <a href="request-a-client.html">Request a client</a>
+    <a href="implementation.html">Implementation guide</a>
+    <a href="reference.html">Reference</a>
+  </nav>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="On this page">
+    <p>On this page</p>
+    <ol>
+      <li><a href="#goal">What we wanted</a></li>
+      <li><a href="#pr">What the PR contained</a></li>
+      <li><a href="#merge">What happened on merge</a></li>
+      <li><a href="#created">What was created</a></li>
+      <li><a href="#github">· GitHub</a></li>
+      <li><a href="#argocd">· ArgoCD</a></li>
+      <li><a href="#kubernetes">· Kubernetes</a></li>
+      <li><a href="#authentik">· Authentik</a></li>
+      <li><a href="#vault">· Vault</a></li>
+      <li><a href="#now">What team-bravo can do now</a></li>
+      <li><a href="#after">After delivery</a></li>
+      <li><a href="#inventory">Reproduce the inventory</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="doc">
+      <div class="meta">
+        <span class="audience">Case study</span>
+        <span>Pull request <b>#1</b></span>
+        <span>Team <b>team-bravo</b></span>
+        <span>Recorded <b>2026-09-13, UTC</b></span>
+      </div>
+      <h1>What pull request #1 did for team-bravo</h1>
+      <p class="lede">The proof of value asked one question: can a team get a working OAuth client, with its secret delivered only to that team, from nothing more than a reviewed file? This page answers it with the records of every system involved. Every value below was read back from GitHub, ArgoCD, Kubernetes, Authentik and Vault after the run; the secret itself appears only as "present, 64 characters".</p>
+      <p class="lede" style="font-size:16px;margin-top:10px">For the step-by-step verification of the same run, see the <a href="walkthrough.html">walkthrough</a>.</p>
+    </header>
+
+    <section id="goal">
+      <h2>What we wanted</h2>
+      <p>team-bravo runs a nightly <strong>report exporter</strong>: a job with no user present that calls internal APIs as itself. That is an OAuth <em>client credentials</em> client, which means a real secret.</p>
+      <div class="three">
+        <div class="panel">
+          <p class="label">Outcome</p>
+          <p>A confidential client the job can use to get access tokens from Authentik.</p>
+        </div>
+        <div class="panel">
+          <p class="label">Constraint</p>
+          <p>No person hands over the secret, and only team-bravo can read it. Other teams must be refused even with valid identities.</p>
+        </div>
+        <div class="panel">
+          <p class="label">Governance</p>
+          <p>A client that acts as itself is higher risk, so it needs explicit security approval before it exists.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="pr">
+      <h2>What the pull request contained</h2>
+      <p>One commit (<code>976f8ce</code>), one new file, 14 lines, on branch <code>request/team-bravo-report-exporter</code>:</p>
+<pre><code><span class="c"># requests/team-bravo/report-exporter.yaml</span>
+<span class="k">apiVersion</span>: courier.sororlab.dev/v1alpha1
+<span class="k">kind</span>: OAuthClient
+<span class="k">metadata</span>:
+  <span class="k">name</span>: report-exporter
+  <span class="k">namespace</span>: team-bravo
+<span class="k">spec</span>:
+  <span class="k">displayName</span>: "team-bravo: nightly report exporter"
+  <span class="k">clientType</span>: confidential
+  <span class="k">grantTypes</span>:
+    - client_credentials
+  <span class="k">scopes</span>:
+    - openid
+    - profile
+    - groups</code></pre>
+      <div class="two">
+        <div class="panel">
+          <h3>What the file says</h3>
+          <ul>
+            <li>The owner is <strong>team-bravo</strong>, because the file lives in <code>requests/team-bravo/</code></li>
+            <li>A <strong>confidential</strong> client using <strong>client credentials</strong></li>
+            <li>Tokens carry identity and <strong>group</strong> claims</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>What the PR did not need</h3>
+          <ul>
+            <li>A ticket, email or chat with the identity team</li>
+            <li>Access to the Authentik or Vault consoles</li>
+            <li>Kubernetes manifests, namespaces or infrastructure changes</li>
+            <li>A secret, anywhere</li>
+          </ul>
+        </div>
+      </div>
+      <p>Review: the policy check failed until the <code>security-approved</code> label was added (<code>20:51:53</code>), then passed (<code>20:53:29</code>). The PR merged at <code>21:40:39</code> as <code>de172bd</code>. Details in the <a href="walkthrough.html#gate">walkthrough</a>.</p>
+    </section>
+
+    <section id="merge">
+      <h2>What happened on merge</h2>
+      <p>Assembled from five independent records: ArgoCD's sync history, Kubernetes object timestamps, the controller's status, Authentik's event log and Vault's audit log.</p>
+      <ol class="seq">
+        <li><div><span class="who">21:40:39 · GitHub</span><p>PR #1 merged into <code>main</code> as <code>de172bd</code>.</p></div></li>
+        <li><div><span class="who">21:41:38 · ArgoCD</span><p>ApplicationSet <code>courier-requests</code> generated Application <code>courier-requests-team-bravo</code> for the new directory and started syncing. Namespace <code>team-bravo</code> was created.</p></div></li>
+        <li><div><span class="who">21:41:40 · Kubernetes</span><p><code>OAuthClient team-bravo/report-exporter</code> created (generation 1). Sync finished: <em>successfully synced (all tasks run)</em>.</p></div></li>
+        <li><div><span class="who">21:41:41 · Vault</span><p>Controller identity <code>kubernetes-courier-system-courier-controller-manager</code> (policy <code>courier</code>) <strong>created</strong> version 1 of the credentials entry: the new secret, <code>state: pending</code>.</p></div></li>
+        <li><div><span class="who">21:41:42 · Authentik</span><p>User <code>courier-controller</code> <strong>created</strong> OAuth2 provider <code>courier-team-bravo-report-exporter</code> with that secret, plus its application and a binding to group <code>team-bravo</code>.</p></div></li>
+        <li><div><span class="who">21:41:45 · Vault</span><p>Same controller identity <strong>patched</strong> the entry to version 2: <code>state: active</code>, <code>client_id</code> and endpoints. The secret was not read or resent.</p></div></li>
+        <li><div><span class="who">21:41:45 · Kubernetes</span><p>OAuthClient condition <code>Ready=True</code>, reason <code>Delivered</code>.</p></div></li>
+        <li><div><span class="who">21:42:24 · Vault</span><p>Access check: <code>jwt-courier-svc-alpha</code> (team-alpha) <strong>denied</strong>; <code>jwt-courier-svc-bravo</code> (team-bravo) <strong>read ok</strong>.</p></div></li>
+      </ol>
+      <div class="callout">
+        <span class="label">Independent proof of the ordering guarantee</span>
+        <p>Vault's audit log shows the secret stored at <code>21:41:41</code>; Authentik's event log shows the client that uses it created at <code>21:41:42</code>. Two systems that do not share a clock source or a log agree that the secret was safely stored before it became live.</p>
+      </div>
+    </section>
+
+    <section id="created">
+      <h2>What was created, platform by platform</h2>
+      <div class="callout">
+        <span class="label">Created by the PR versus set up at onboarding</span>
+        <p>The team-bravo identity group, its vault policy and identity groups, and the test service account existed before the PR; they are part of onboarding a team. Everything listed below under ArgoCD, Kubernetes, Authentik and the vault entry was created by merging this one file.</p>
+      </div>
+    </section>
+
+    <section id="github">
+      <h2>GitHub</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Object</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Pull request</td><td>#1 <em>request: team-bravo report-exporter (client_credentials)</em>, 1 commit, 1 file</td></tr>
+            <tr><td>Label</td><td><code>security-approved</code>, added <code>20:53:08</code></td></tr>
+            <tr><td>Check runs on <code>976f8ce</code></td><td>Validate requests: <span class="pill p-bad">failure</span> <code>20:51:53</code>, <span class="pill p-good">success</span> <code>20:53:29</code></td></tr>
+            <tr><td>Merge commit</td><td><code>de172bd</code> at <code>21:40:39</code>; head branch deleted <code>21:40:47</code></td></tr>
+            <tr><td>Durable record</td><td>The request file on <code>main</code> is now the source of truth for this client</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="argocd">
+      <h2>ArgoCD</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Application</td><td><code>courier-requests-team-bravo</code>, created <code>21:41:38</code></td></tr>
+            <tr><td>Owned by</td><td>ApplicationSet <code>courier-requests</code> (generated, not hand-made)</td></tr>
+            <tr><td>Project</td><td><code>courier-requests</code>: only <code>OAuthClient</code> objects, only <code>team-*</code> namespaces</td></tr>
+            <tr><td>Source</td><td><code>github.com/paimonsoror/courier</code>, path <code>requests/team-bravo</code>, files <code>*.yaml</code>, revision <code>main</code></td></tr>
+            <tr><td>Destination</td><td>namespace <code>team-bravo</code></td></tr>
+            <tr><td>Sync policy</td><td>automated, prune, self-heal, <code>CreateNamespace=true</code></td></tr>
+            <tr><td>Manages</td><td>1 resource: <code>courier.sororlab.dev/OAuthClient team-bravo/report-exporter</code>, Synced</td></tr>
+            <tr><td>First sync</td><td>revision <code>de172bd</code>, deployed <code>21:41:40</code>; status Synced, Healthy</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="kubernetes">
+      <h2>Kubernetes</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Object</th><th>Details</th></tr></thead>
+          <tbody>
+            <tr><td>Namespace <code>team-bravo</code></td><td>Created <code>21:41:38</code> by ArgoCD</td></tr>
+            <tr><td>OAuthClient <code>report-exporter</code></td><td>Created <code>21:41:40</code>; finalizer <code>courier.sororlab.dev/cleanup</code>; label <code>app.kubernetes.io/instance=courier-requests-team-bravo</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="label">OAuthClient status</p>
+<pre><code><span class="k">clientId</span>:             8BhnTaEg83o1lfhlwLSbBqHL6N5rMGOdsUi9rfA9
+<span class="k">credentialsDelivered</span>: true
+<span class="k">identityProvider</span>:     authentik
+<span class="k">lastSecretIssued</span>:     2026-09-13T21:41:45Z
+<span class="k">observedGeneration</span>:   1
+<span class="k">secretPath</span>:           kv/teams/team-bravo/oauth-clients/team-bravo-report-exporter
+<span class="k">conditions</span>:
+  - Ready=True  reason=Delivered  since 21:41:45
+    "credentials are available at kv/teams/team-bravo/oauth-clients/team-bravo-report-exporter"</code></pre>
+      <p>Nothing else was created in the namespace: no Secret, no workload. The only other objects are the ones Kubernetes adds to every namespace (<code>ServiceAccount default</code>, <code>ConfigMap kube-root-ca.crt</code>).</p>
+    </section>
+
+    <section id="authentik">
+      <h2>Authentik</h2>
+      <h3>OAuth2 provider (pk 12)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Value</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>name</td><td><code>courier-team-bravo-report-exporter</code></td><td>Courier's naming, <code>courier-&lt;team&gt;-&lt;name&gt;</code></td></tr>
+            <tr><td>client_type</td><td><code>confidential</code></td><td>From the request</td></tr>
+            <tr><td>client_id</td><td><code>8BhnTaEg83o1lfhlwLSbBqHL6N5rMGOdsUi9rfA9</code></td><td>Generated by Authentik; not sensitive</td></tr>
+            <tr><td>client_secret</td><td><span class="pill p-secret">present, 64 chars</span></td><td>Generated by Courier; same value as in the vault</td></tr>
+            <tr><td>grant_types</td><td><code>client_credentials</code> only</td><td>Authentik rejects any grant not listed</td></tr>
+            <tr><td>redirect_uris</td><td>none</td><td>No browser sign-in for a machine client</td></tr>
+            <tr><td>property_mappings</td><td>OpenID <code>openid</code>, OpenID <code>profile</code>, <code>oauth-groups</code></td><td>The three requested scopes</td></tr>
+            <tr><td>sub_mode</td><td><code>user_email</code></td><td>Courier default</td></tr>
+            <tr><td>include_claims_in_id_token</td><td><code>true</code></td><td>Groups available to relying parties</td></tr>
+            <tr><td>access / refresh token validity</td><td><code>hours=1</code> / <code>days=30</code></td><td>Authentik defaults</td></tr>
+            <tr><td>authorization flow</td><td><code>default-provider-authorization-implicit-consent</code></td><td>Courier default</td></tr>
+            <tr><td>signing key</td><td><code>authentik Self-signed Certificate</code></td><td>Courier default</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Application and access</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Object</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Application</td><td>name <em>team-bravo: nightly report exporter</em>, slug <code>team-bravo-report-exporter</code>, provider 12</td></tr>
+            <tr><td>Ownership marker</td><td><code>meta_description: managed-by: courier; owner: team-bravo</code></td></tr>
+            <tr><td>Policy binding</td><td>group <code>team-bravo</code>, order 0, enabled; policy engine mode <code>any</code></td></tr>
+            <tr><td>Issuer</td><td><code>https://auth.sororlab.dev/application/o/team-bravo-report-exporter/</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Authentik event log for this client</h3>
+<pre><code>21:41:42  model_created  by courier-controller  oauth2provider  courier-team-bravo-report-exporter
+21:51:48  model_updated  by courier-controller  oauth2provider  courier-team-bravo-report-exporter
+21:51:48  model_updated  by courier-controller  application     team-bravo: nightly report exporter
+22:01:51  model_updated  by courier-controller  oauth2provider  courier-team-bravo-report-exporter
+22:01:52  model_updated  by courier-controller  application     team-bravo: nightly report exporter</code></pre>
+      <p>Every change is attributed to the scoped <code>courier-controller</code> account, not to an administrator. The updates every ten minutes are the controller's routine drift repair, discussed <a href="#after">below</a>.</p>
+    </section>
+
+    <section id="vault">
+      <h2>Vault</h2>
+      <h3>The credentials entry</h3>
+      <p>Path <code>kv/teams/team-bravo/oauth-clients/team-bravo-report-exporter</code></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td><code>client_id</code></td><td><code>8BhnTaEg83o1lfhlwLSbBqHL6N5rMGOdsUi9rfA9</code></td></tr>
+            <tr><td><code>client_secret</code></td><td><span class="pill p-secret">present, 64 chars</span></td></tr>
+            <tr><td><code>client_type</code></td><td><code>confidential</code></td></tr>
+            <tr><td><code>grant_types</code></td><td><code>client_credentials</code></td></tr>
+            <tr><td><code>scopes</code></td><td><code>openid profile groups</code></td></tr>
+            <tr><td><code>issuer</code></td><td><code>https://auth.sororlab.dev/application/o/team-bravo-report-exporter/</code></td></tr>
+            <tr><td><code>token_endpoint</code></td><td><code>https://auth.sororlab.dev/application/o/token/</code></td></tr>
+            <tr><td><code>authorization_endpoint</code></td><td><code>https://auth.sororlab.dev/application/o/authorize/</code></td></tr>
+            <tr><td><code>jwks_uri</code></td><td><code>https://auth.sororlab.dev/application/o/team-bravo-report-exporter/jwks/</code></td></tr>
+            <tr><td><code>userinfo_endpoint</code></td><td><code>https://auth.sororlab.dev/application/o/userinfo/</code></td></tr>
+            <tr><td><code>owner_group</code></td><td><code>team-bravo</code></td></tr>
+            <tr><td><code>idp</code> / <code>managed_by</code></td><td><code>authentik</code> / <code>courier-controller</code></td></tr>
+            <tr><td><code>state</code></td><td><code>active</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Who can read it</h3>
+<pre><code><span class="c"># policy team-bravo</span>
+path "kv/data/teams/team-bravo/*"      { capabilities = ["read"] }
+path "kv/metadata/teams/team-bravo/*"  { capabilities = ["read", "list"] }
+path "kv/metadata/teams/team-bravo"    { capabilities = ["list"] }
+
+<span class="c"># granted through identity groups mapped from the IdP group team-bravo</span>
+identity group team-bravo       alias team-bravo on oidc/  →  policy team-bravo   <span class="c"># people</span>
+identity group team-bravo-jwt   alias team-bravo on jwt/   →  policy team-bravo   <span class="c"># workloads</span></code></pre>
+
+      <h3>Vault audit log for this path</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Operation</th><th>Identity</th><th>Policies</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td><code>21:41:41</code></td><td>create</td><td>kubernetes-courier-system-courier-controller-manager</td><td>courier</td><td><span class="pill p-good">ok</span> v1, pending</td></tr>
+            <tr><td><code>21:41:45</code></td><td>patch</td><td>kubernetes-courier-system-courier-controller-manager</td><td>courier</td><td><span class="pill p-good">ok</span> v2, active</td></tr>
+            <tr><td><code>21:42:24</code></td><td>read</td><td>jwt-courier-svc-alpha</td><td>default, team-alpha</td><td><span class="pill p-bad">permission denied</span></td></tr>
+            <tr><td><code>21:42:24</code></td><td>read</td><td>jwt-courier-svc-bravo</td><td>default, team-bravo</td><td><span class="pill p-good">ok</span></td></tr>
+            <tr><td><code>21:44:09</code></td><td>read metadata</td><td>oidc-paimon.soror@gmail.com</td><td>default, team-alpha, vault-admin</td><td><span class="pill p-good">ok</span> administrator browsing the UI</td></tr>
+            <tr><td><code>21:51:49</code></td><td>patch</td><td>kubernetes-courier-system-courier-controller-manager</td><td>courier</td><td><span class="pill p-good">ok</span> v3, resync</td></tr>
+            <tr><td><code>22:01:52</code></td><td>patch</td><td>kubernetes-courier-system-courier-controller-manager</td><td>courier</td><td><span class="pill p-good">ok</span> v4, resync</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Three things stand out. The controller never <em>reads</em> the entry; it only creates and patches. The only successful data read is team-bravo's. And an administrator's access is recorded like anyone else's, which is why the broad <code>vault-admin</code> policy is on the <a href="implementation.html#harden">hardening checklist</a>.</p>
+    </section>
+
+    <section id="now">
+      <h2>What team-bravo can do now</h2>
+      <div class="two compare">
+        <div class="panel after">
+          <p class="label">Can</p>
+          <ul>
+            <li><strong>People</strong> in the team-bravo group sign in with <code>vault login -method=oidc</code> and read the credentials</li>
+            <li><strong>Workloads</strong> with a team-bravo identity log in to Vault (<code>jwt/</code>, role <code>machine</code>) and read them at start-up</li>
+            <li>Exchange them for <strong>access tokens</strong> at the token endpoint (<code>client_credentials</code>, valid 1 hour); verified with HTTP 200</li>
+            <li><strong>Change</strong> the client (scopes, display name, groups) with a pull request; the secret stays the same</li>
+            <li><strong>Retire</strong> it with a pull request; the client is deleted and the secret destroyed</li>
+            <li><strong>See status</strong> in ArgoCD (<code>courier-requests-team-bravo</code>) or with <code>kubectl -n team-bravo get oauthclients</code></li>
+          </ul>
+        </div>
+        <div class="panel before">
+          <p class="label">Cannot</p>
+          <ul>
+            <li>Find the secret anywhere but Vault: not in Git, CI, ArgoCD, Kubernetes status or logs</li>
+            <li>Let another team read it; team-alpha was refused with a valid identity</li>
+            <li>Request a client under another team's name or vault path</li>
+            <li>Add a high-risk grant without the <code>security-approved</code> label</li>
+            <li>Edit the client in Authentik out of band and have it stick; the controller restores the requested settings</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">
+        <span class="label">Next for team-bravo</span>
+        <p>This phase adds two easier ways to consume the credentials: an External Secrets sync that places them in a Kubernetes Secret in <code>team-bravo</code>, and a Python sample that reads them with the workload's own identity. They will be recorded here with the same evidence once verified.</p>
+      </div>
+    </section>
+
+    <section id="after">
+      <h2>After delivery</h2>
+      <p>Every ten minutes the controller re-applies each ready request. The records show exactly what that did:</p>
+      <ul>
+        <li><strong>Authentik:</strong> provider and application <code>model_updated</code> at <code>21:51</code> and <code>22:01</code>. This is intended: it restores any settings changed by hand in the console. Because nothing had changed, the updates were no-ops, though they add entries to the event log.</li>
+        <li><strong>Vault:</strong> patches at <code>21:51:49</code> and <code>22:01:52</code> created versions 3 and 4 with identical content. This was <em>not</em> intended.</li>
+      </ul>
+      <div class="callout warn">
+        <span class="label">Finding from this inventory, fixed</span>
+        <p>Each KV v2 write creates a new version, and each version retains a copy of the secret, so the periodic resync was producing a new version of unchanged credentials every ten minutes. The controller now rewrites vault metadata only when the request itself changes (its generation differs from the last reconciled one). IdP drift repair is unchanged. Comparing IdP settings before writing, to quiet the Authentik event log, is planned with drift detection.</p>
+      </div>
+    </section>
+
+    <section id="inventory">
+      <h2>Reproduce the inventory</h2>
+      <p>Every table on this page came from one script, run after the merge:</p>
+<pre><code>deploy/phase2/inventory.sh team-bravo report-exporter</code></pre>
+      <p>It reads each platform directly: the namespace and <code>OAuthClient</code>; the ArgoCD application and sync history; the Authentik provider, application, bindings and event log; and the Vault entry metadata, fields (secret shown only as present with its length), access policy, identity groups and audit log.</p>
+    </section>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <span>Courier documentation</span>
+  <span>Source: <a href="https://github.com/paimonsoror/courier">github.com/paimonsoror/courier</a></span>
+</footer>
+
+</body>
+</html>
