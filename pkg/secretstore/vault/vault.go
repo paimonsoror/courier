@@ -84,7 +84,7 @@ func (k *KubernetesAuth) Token(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("vault kubernetes login: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("vault kubernetes login: %w", apiError(resp))
 	}
@@ -147,7 +147,7 @@ func (s *Store) Delete(ctx context.Context, path string) error {
 	if err != nil {
 		return fmt.Errorf("vault delete %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusNoContent, http.StatusNotFound:
 		return nil
@@ -168,7 +168,7 @@ func (s *Store) write(ctx context.Context, method, path, contentType string, fie
 	if err != nil {
 		return fmt.Errorf("vault %s %s: %w", strings.ToLower(method), path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}

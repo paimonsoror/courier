@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Courier Overview</title>
+<meta name="description" content="Why Courier exists, what it changes for identity teams, and how it delivers OAuth client credentials to the right team without anyone handling a secret.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/courier.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Courier <small>OAuth client delivery</small></a>
+  <nav class="site-nav" aria-label="Documentation">
+    <a href="index.html" aria-current="page">Overview</a>
+    <a href="how-it-works.html">How it works</a>
+    <a href="request-a-client.html">Request a client</a>
+    <a href="implementation.html">Implementation guide</a>
+    <a href="reference.html">Reference</a>
+  </nav>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="On this page">
+    <p>On this page</p>
+    <ol>
+      <li><a href="#challenge">The challenge</a></li>
+      <li><a href="#change">What changes</a></li>
+      <li><a href="#flow">How it works</a></li>
+      <li><a href="#under-the-hood">Under the hood</a></li>
+      <li><a href="#controls">Risks and controls</a></li>
+      <li><a href="#roles">By role</a></li>
+      <li><a href="#status">Status</a></li>
+      <li><a href="#next">Where to go next</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="doc">
+      <div class="meta">
+        <span class="audience">Identity and security leaders</span>
+        <span>Reading time <b>8 minutes</b></span>
+        <span>Status <b>Proof of value, phase 2</b></span>
+      </div>
+      <h1>Every OAuth client delivered to the team that owns it, with no secret changing hands</h1>
+      <p class="lede">Courier turns OAuth client registration into a reviewed request. After approval it creates the client in the identity provider and places the credentials in a vault path that only the owning team's identity group can open. Nobody copies, emails or pastes a <code>client_secret</code>.</p>
+    </header>
+
+    <section id="challenge">
+      <h2>The challenge</h2>
+      <p>Every integration with the identity provider needs a client registration: web apps, backend jobs, and now MCP servers and AI agents that call APIs on a user's behalf. The number of clients grows with every team and every new tool, but the process for issuing them has not changed. An identity administrator creates the client in a console, then sends the <code>client_id</code> and <code>client_secret</code> to someone.</p>
+
+      <div class="three">
+        <div class="panel">
+          <h3>Secrets travel through people</h3>
+          <p>Credentials are copied into email, chat and tickets. They stay there permanently, and nobody can say who has seen them.</p>
+        </div>
+        <div class="panel">
+          <h3>The identity team becomes a queue</h3>
+          <p>Every new client, redirect URI change or cleanup waits on a small group of administrators with console access.</p>
+        </div>
+        <div class="panel">
+          <h3>Clients outlive their owners</h3>
+          <p>Registrations carry no reliable owner. When a project ends or a person leaves, the client and its secret keep working.</p>
+        </div>
+      </div>
+      <p>Behind these sit two quieter problems. Configuration drifts from standards because each client is set up by hand: an extra grant here, a wildcard redirect there. And when an auditor asks who approved a client, who can read its secret and when it was last issued, the answers live in several systems or nowhere.</p>
+    </section>
+
+    <section id="change">
+      <h2>What changes with Courier</h2>
+      <div class="two compare">
+        <div class="panel before">
+          <p class="label">Today</p>
+          <ul>
+            <li>A team files a ticket or sends a message</li>
+            <li>An administrator configures the client by hand</li>
+            <li>The secret is sent to whoever asked</li>
+            <li>Access to the secret follows whoever received it</li>
+            <li>Removing a client depends on someone remembering</li>
+          </ul>
+        </div>
+        <div class="panel after">
+          <p class="label">With Courier</p>
+          <ul>
+            <li>A team opens a pull request describing the client</li>
+            <li>Automated checks enforce standards; the right people approve</li>
+            <li>Courier creates the client and stores the secret directly in the vault</li>
+            <li>Only members of the owning identity group can read it</li>
+            <li>Deleting the request deletes the client and destroys the secret</li>
+          </ul>
+        </div>
+      </div>
+      <p>The identity team moves from doing every registration to owning the rules every registration must follow. Teams get credentials in minutes instead of waiting in a queue, and the handoff that used to be the weakest step no longer involves a person.</p>
+    </section>
+
+    <section id="flow">
+      <h2>How it works</h2>
+      <p>Four stages, each owned by the system best suited to it: Git records intent and approval, the identity provider holds the client, and the vault is the only place the secret is ever kept.</p>
+      <div class="flow" style="--stages:4" role="img" aria-label="Request as a pull request, approve with policy checks and code owners, deliver by creating the client and writing the vault, consume through identity group membership">
+        <div class="stage">
+          <span class="label">Request</span>
+          <h4>Pull request</h4>
+          <div class="node"><b>One small file</b><small>client type, grants, redirect URIs, owning team</small></div>
+        </div>
+        <div class="stage">
+          <span class="label">Approve</span>
+          <h4>Review with guardrails</h4>
+          <div class="node"><b>Policy check</b><small>standards enforced automatically</small></div>
+          <div class="node"><b>Code owners</b><small>the team lead, plus security for sensitive grants</small></div>
+        </div>
+        <div class="stage">
+          <span class="label">Deliver</span>
+          <h4>Courier</h4>
+          <div class="node"><b>Creates the client</b><small>in the identity provider</small></div>
+          <div class="node secret"><b>Stores the secret</b><small>in the team's vault path</small></div>
+        </div>
+        <div class="stage">
+          <span class="label">Consume</span>
+          <h4>Owning team</h4>
+          <div class="node"><b>Reads the credentials</b><small>signed in with their normal identity</small></div>
+        </div>
+      </div>
+      <p class="flow-caption">The secret appears only in the amber box. It is generated inside Courier and written straight to the vault.</p>
+    </section>
+
+    <section id="under-the-hood">
+      <h2>Under the hood, in plain terms</h2>
+      <p>Six design choices carry the promise. Each has a one-line technical note for readers who want to know how it is enforced rather than just that it is.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Principle</th><th>What it means</th><th>How it is enforced</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Approval is a pull request</strong></td>
+              <td>The decision, the reviewer and the reason sit in one permanent record.</td>
+              <td>Branch protection requires code-owner review and a passing <code>courier validate</code> check before merge.</td>
+            </tr>
+            <tr>
+              <td><strong>Access follows identity groups</strong></td>
+              <td>Joining or leaving a team in the identity provider grants or removes access to its secrets. No separate list to maintain.</td>
+              <td>Vault trusts the same IdP; the <code>groups</code> claim maps to a vault policy scoped to <code>kv/teams/&lt;team&gt;/</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Courier can write, but not read</strong></td>
+              <td>Even if Courier were compromised, it could not reveal secrets it has already delivered.</td>
+              <td>Courier's vault policy allows <code>create</code>, <code>update</code>, <code>patch</code> and <code>delete</code>, not <code>read</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Stored before it is live</strong></td>
+              <td>A failure at any moment can never leave a working secret that nobody has.</td>
+              <td>The secret is written as <code>pending</code> before the IdP accepts it, then promoted to <code>active</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Only touches what it created</strong></td>
+              <td>Existing, hand-built clients are safe from accidental changes.</td>
+              <td>Courier marks its applications and refuses to modify any application without the marker.</td>
+            </tr>
+            <tr>
+              <td><strong>Every rule is checked twice</strong></td>
+              <td>What reviewers see in the pull request is exactly what will be enforced after merge.</td>
+              <td>The CI check and the in-cluster controller run the same validation code.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <span class="label">A note on MCP and AI agents</span>
+        <p>Many MCP <em>clients</em> (IDEs, desktop apps, CLI agents) are public clients that use PKCE and hold no secret, and newer MCP authorization guidance reduces how often they must be pre-registered at all. Courier still records their ownership. Its strongest value is for <em>confidential</em> clients: MCP servers, backends and machine-to-machine jobs, where a real secret exists and must reach the right workload safely.</p>
+      </div>
+    </section>
+
+    <section id="controls">
+      <h2>Risks and the controls that address them</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Risk</th><th>Control</th><th>Evidence you can show an auditor</th></tr></thead>
+          <tbody>
+            <tr><td>Secret disclosed in transit between people</td><td>No human handoff; secret generated and stored by Courier</td><td>Vault audit log shows every read, by identity</td></tr>
+            <tr><td>Wrong team obtains a client or its secret</td><td>Owner group is fixed by the team directory; vault path scoped per group</td><td>Pull request history; vault policy per team</td></tr>
+            <tr><td>Unreviewed or non-standard client configuration</td><td>Automated policy check plus code-owner approval before merge</td><td>Required status check and approvals on every merged PR</td></tr>
+            <tr><td>High-risk grants issued casually</td><td>Grants such as <code>client_credentials</code> need an explicit approval label</td><td>Label and approver recorded on the PR</td></tr>
+            <tr><td>Orphaned clients with live secrets</td><td>Every client has an owning team; removing the request deletes client and secret</td><td>Request inventory in Git; controller status per client</td></tr>
+            <tr><td>Automation itself becomes a liability</td><td>Least privilege: write-only vault access, IdP role limited to OAuth clients</td><td>Vault policy and IdP role definitions in the repository</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="roles">
+      <h2>What it means for each role</h2>
+      <div class="three">
+        <div class="panel">
+          <p class="label">Identity team</p>
+          <p>Owns the policy file and the vault and IdP integrations. Reviews only what needs judgment, such as new grant types or unusual redirect hosts, instead of every registration.</p>
+        </div>
+        <div class="panel">
+          <p class="label">Application teams</p>
+          <p>Request, change and retire their own clients with a pull request. Read credentials with the identity they already use, from a laptop or a workload.</p>
+        </div>
+        <div class="panel">
+          <p class="label">Security and audit</p>
+          <p>Get a single, reviewable record of who asked for what, who approved it, where the secret lives and who read it.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="status">
+      <h2>Status</h2>
+      <p>Courier is running end to end in a reference environment built on Authentik, HashiCorp Vault Community Edition, Kubernetes and ArgoCD. The identity-provider integration is a small adapter, so Okta and similar providers can be added without changing the rest of the system.</p>
+      <div class="phases">
+        <div class="phase done"><span class="label">Phase 0</span><div><h3>Access model proven</h3><p>Vault with automatic unsealing; identity groups decide who can read each team's secrets.</p></div></div>
+        <div class="phase done"><span class="label">Phase 1</span><div><h3>Delivery automated</h3><p>A request becomes a client plus stored credentials; the owning team can use them and other teams cannot.</p></div></div>
+        <div class="phase done"><span class="label">Phase 2</span><div><h3>Pull request workflow</h3><p>Requests live in Git with policy checks, code-owner approval and automatic sync after merge.</p></div></div>
+        <div class="phase"><span class="label">Phase 3</span><div><h3>Self-service portal</h3><p>A Backstage form that opens the pull request, and client status on each team's page.</p></div></div>
+        <div class="phase"><span class="label">Phase 4</span><div><h3>Lifecycle</h3><p>Scheduled rotation, drift repair, adopting existing clients, audit dashboards.</p></div></div>
+        <div class="phase"><span class="label">Phase 5</span><div><h3>Portability</h3><p>Okta adapter and key-based client authentication (<code>private_key_jwt</code>).</p></div></div>
+      </div>
+    </section>
+
+    <section id="next">
+      <h2>Where to go next</h2>
+      <div class="two">
+        <a class="panel persona" href="how-it-works.html">
+          <span class="label">Architects and security reviewers</span>
+          <h3>How it works</h3>
+          <p>Components, the request lifecycle, the trust model and failure handling.</p>
+        </a>
+        <a class="panel persona" href="request-a-client.html">
+          <span class="label">Application teams</span>
+          <h3>Request a client</h3>
+          <p>Write a request, open the pull request, and read your credentials.</p>
+        </a>
+        <a class="panel persona" href="implementation.html">
+          <span class="label">Implementation engineers</span>
+          <h3>Implementation guide</h3>
+          <p>Install, verify and operate every component, with known pitfalls.</p>
+        </a>
+        <a class="panel persona" href="reference.html">
+          <span class="label">Everyone, when you need a detail</span>
+          <h3>Reference</h3>
+          <p>Request fields, status conditions, policy file, CLI flags and vault layout.</p>
+        </a>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <span>Courier documentation</span>
+  <span>Source: <a href="https://github.com/paimonsoror/courier">github.com/paimonsoror/courier</a></span>
+</footer>
+
+</body>
+</html>
