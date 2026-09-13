@@ -9,8 +9,6 @@ rules:
   resources:
   - oauthclients
   verbs:
-  - create
-  - delete
   - get
   - list
   - patch

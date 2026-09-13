@@ -11,13 +11,33 @@ spec:
     kind: OAuthClient
     listKind: OAuthClientList
     plural: oauthclients
+    shortNames:
+    - oac
     singular: oauthclient
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .spec.clientType
+      name: Type
+      type: string
+    - jsonPath: .status.clientId
+      name: Client ID
+      type: string
+    - jsonPath: .status.secretPath
+      name: Secret Path
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: OAuthClient is the Schema for the oauthclients API
+        description: |-
+          OAuthClient requests an OAuth client in the identity provider, with its
+          credentials delivered to the owning team's Vault path.
         properties:
           apiVersion:
             description: |-
@@ -39,25 +59,74 @@ spec:
           spec:
             description: spec defines the desired state of OAuthClient
             properties:
-              foo:
-                description: foo is an example field of OAuthClient. Edit oauthclient_types.go
-                  to remove/update
+              allowGroups:
+                description: allowGroups may sign in through the client. Defaults
+                  to the owner group.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              clientType:
+                description: clientType is public (PKCE, no secret) or confidential
+                  (secret delivered to Vault).
+                enum:
+                - public
+                - confidential
                 type: string
+              displayName:
+                description: displayName is shown in the identity provider. Defaults
+                  to <namespace>/<name>.
+                type: string
+              grantTypes:
+                description: grantTypes the client may use.
+                items:
+                  enum:
+                  - authorization_code
+                  - refresh_token
+                  - client_credentials
+                  type: string
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: set
+              ownerGroup:
+                description: |-
+                  ownerGroup is the IdP group that owns the client and can read its
+                  credentials. It must equal the namespace; empty means the namespace.
+                type: string
+              redirectUris:
+                description: redirectUris must be https, except http loopback for
+                  public clients.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              scopes:
+                description: scopes requested by the client. Defaults to [openid].
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+            required:
+            - clientType
+            - grantTypes
             type: object
+            x-kubernetes-validations:
+            - message: client_credentials requires clientType confidential
+              rule: self.clientType == 'confidential' || !self.grantTypes.exists(g,
+                g == 'client_credentials')
+            - message: authorization_code requires at least one redirect URI
+              rule: '!self.grantTypes.exists(g, g == ''authorization_code'') || (has(self.redirectUris)
+                && size(self.redirectUris) > 0)'
           status:
             description: status defines the observed state of OAuthClient
             properties:
+              clientId:
+                description: clientId of the client in the identity provider. Not
+                  sensitive.
+                type: string
               conditions:
-                description: |-
-                  conditions represent the current state of the OAuthClient resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                description: 'conditions: Ready is True when the client exists and
+                  credentials are available.'
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -116,6 +185,25 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              credentialsDelivered:
+                description: credentialsDelivered is true once credentials were stored
+                  and are live.
+                type: boolean
+              identityProvider:
+                description: identityProvider is the adapter that manages the client.
+                type: string
+              lastSecretIssued:
+                description: lastSecretIssued is when Courier last generated a client
+                  secret.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: observedGeneration is the spec generation last reconciled.
+                format: int64
+                type: integer
+              secretPath:
+                description: secretPath is where the owning team reads the credentials.
+                type: string
             type: object
         required:
         - spec
