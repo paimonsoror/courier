@@ -25,7 +25,7 @@ full design and [docs/adr](docs/adr) for decisions.
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Vault CE on k3s, OIDC login via Authentik, group-gated read proven | done ([deploy/phase0](deploy/phase0)) |
-| 1 | Kubernetes-free core (IdP adapter, Vault writer, ordered broker) + `OAuthClient` controller wrapping it | in progress ([ADR 0003](docs/adr/0003-core-library-thin-controller.md)) |
+| 1 | Kubernetes-free core (IdP adapter, Vault writer, ordered broker) + `OAuthClient` controller wrapping it | done ([deploy/phase1](deploy/phase1), [ADR 0003](docs/adr/0003-core-library-thin-controller.md)) |
 | 2 | GitOps request repo, CI validation, per-team SecretStore + ESO, **consumer code samples** | not started |
 | 3 | Backstage Scaffolder template + status on Group pages | not started |
 | 4 | Rotation, drift detection, adopt mode, audit → Loki | not started |
