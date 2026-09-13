@@ -1,0 +1,41 @@
+# Every team directory under requests/ also gets a Vault connection in its
+# namespace: ServiceAccount courier-secrets + SecretStore courier-vault.
+# Teams then add ExternalSecrets in their own deployments to sync credentials.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: courier-team-access
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/paimonsoror/courier.git
+        revision: main
+        directories:
+          - path: "requests/*"
+  template:
+    metadata:
+      name: "courier-team-access-{{ .path.basename }}"
+      labels:
+        app.kubernetes.io/part-of: courier
+        courier.sororlab.dev/team: "{{ .path.basename }}"
+    spec:
+      project: courier-team-access
+      source:
+        repoURL: https://github.com/paimonsoror/courier.git
+        targetRevision: main
+        path: deploy/team-access
+        helm:
+          valuesObject:
+            team: "{{ .path.basename }}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{ .path.basename }}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

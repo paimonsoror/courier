@@ -1,0 +1,22 @@
+# Guardrail for per-team Vault connections: only a ServiceAccount and a
+# SecretStore, only in team-* namespaces, only from this repository.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: courier-team-access
+  namespace: argocd
+spec:
+  description: Per-team External Secrets store for Courier credentials
+  sourceRepos:
+    - https://github.com/paimonsoror/courier.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "team-*"
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ServiceAccount
+    - group: external-secrets.io
+      kind: SecretStore
