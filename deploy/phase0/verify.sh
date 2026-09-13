@@ -72,7 +72,7 @@ for team, other in (("alpha", "bravo"), ("bravo", "alpha")):
     claims = json.loads(base64.urlsafe_b64decode(jwt.split(".")[1] + "=="))
     check(f"{team}: token carries group team-{team}", f"team-{team}" in claims.get("groups", []), f"groups={claims.get('groups')}")
 
-    status, login = http(f"{vault}/v1/auth/oidc/login", {"role": "machine", "jwt": jwt})
+    status, login = http(f"{vault}/v1/auth/jwt/login", {"role": "machine", "jwt": jwt})
     vtok = (login.get("auth") or {}).get("client_token")
     check(f"{team}: Vault machine login", status == 200 and bool(vtok), f"HTTP {status} {login.get('errors')}")
     if not vtok:
