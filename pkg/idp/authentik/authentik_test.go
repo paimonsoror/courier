@@ -17,8 +17,8 @@ const (
 
 func TestDiffers(t *testing.T) {
 	current := map[string]any{
-		"name":      "courier-team-alpha-orders-portal",
-		keyProvider: float64(12),
+		"name":        "courier-team-alpha-orders-portal",
+		keyProvider:   float64(12),
 		keyGrantTypes: []any{grantRefresh, grantAuthCode},
 		keyRedirectURIs: []any{
 			map[string]any{keyURL: redirectB, keyMatchingMode: strict},
