@@ -68,10 +68,12 @@ def vault_token(team):
     st, login = http(f"{vault}/v1/auth/jwt/login", {"role": "machine", "jwt": tok.get("id_token") or tok["access_token"]})
     return login["auth"]["client_token"]
 
-def token_status(client_id, client_secret):
-    code, _ = http(idp_token, {"grant_type": "client_credentials", "client_id": client_id,
-        "client_secret": client_secret, "username": testers["alpha_username"], "password": testers["alpha_token"],
-        "scope": "openid profile"}, form=True)
+def secret_status(client_id, client_secret):
+    # The revocation endpoint always authenticates the client (200 accepted,
+    # 401 rejected); a token request would not, see verify-rotation.sh.
+    auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    code, _ = http(idp_token.replace("/token/", "/revoke/"), {"token": "courier-probe-not-a-real-token"},
+                   headers={"Authorization": "Basic " + auth}, form=True)
     return code
 
 url = f"{vault}/v1/kv/data/teams/team-alpha/oauth-clients/legacy-crm"
@@ -80,11 +82,11 @@ st, body = http(url, headers={"X-Vault-Token": alpha})
 entry = (body.get("data") or {}).get("data") or {}
 check("team-alpha reads the adopted client's credentials", st == 200 and entry.get("state") == "active", f"HTTP {st}")
 check("client ID is unchanged by adoption", entry.get("client_id") == legacy["client_id"])
-code = token_status(legacy["client_id"], legacy["client_secret"])
-check("the emailed secret no longer works", code in (400, 401), f"HTTP {code}")
+code = secret_status(legacy["client_id"], legacy["client_secret"])
+check("Authentik rejects the emailed secret", code == 401, f"HTTP {code}")
 if entry.get("client_secret"):
-    code = token_status(entry["client_id"], entry["client_secret"])
-    check("the secret Courier stored in vault works", code == 200, f"HTTP {code}")
+    code = secret_status(entry["client_id"], entry["client_secret"])
+    check("Authentik accepts the secret Courier stored in vault", code == 200, f"HTTP {code}")
 st, _ = http(url, headers={"X-Vault-Token": bravo})
 check("team-bravo is denied", st == 403, f"HTTP {st}")
 for t in (alpha, bravo):

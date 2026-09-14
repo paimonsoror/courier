@@ -24,11 +24,16 @@ def secret(ns, name):
 
 legacy = secret("vault", "courier-phase4-legacy")
 testers = secret("vault", "courier-phase0-testers")
-form = {"grant_type": "client_credentials", "client_id": legacy["client_id"], "client_secret": legacy["client_secret"],
-        "username": testers["alpha_username"], "password": testers["alpha_token"], "scope": "openid profile"}
+# The revocation endpoint authenticates the client: 200 means Authentik accepts
+# this client_id/secret pair. (A client_credentials token request would not
+# prove it: Authentik ignores the secret when a service account signs in.)
+auth = base64.b64encode(f"{legacy['client_id']}:{legacy['client_secret']}".encode()).decode()
+req = urllib.request.Request("https://auth.sororlab.dev/application/o/revoke/",
+    data=urllib.parse.urlencode({"token": "courier-probe-not-a-real-token"}).encode(),
+    headers={"Authorization": "Basic " + auth})
 try:
-    urllib.request.urlopen("https://auth.sororlab.dev/application/o/token/", data=urllib.parse.urlencode(form).encode())
-    print(f"legacy-crm client_id={legacy['client_id']}: the emailed secret works today (HTTP 200)")
+    urllib.request.urlopen(req)
+    print(f"legacy-crm client_id={legacy['client_id']}: Authentik accepts the emailed secret today (HTTP 200)")
 except urllib.error.HTTPError as e:
-    raise SystemExit(f"legacy secret should work before adoption, got HTTP {e.code}")
+    raise SystemExit(f"legacy secret should be accepted before adoption, got HTTP {e.code}")
 PY

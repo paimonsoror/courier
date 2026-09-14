@@ -27,6 +27,7 @@ Command line::
 from __future__ import annotations
 
 import argparse
+import base64
 import dataclasses
 import json
 import os
@@ -171,6 +172,35 @@ def client_credentials_token(
     except urllib.error.HTTPError as err:
         detail = json.loads(err.read() or b"{}").get("error", "")
         raise PermissionError(f"token endpoint returned HTTP {err.code} {detail}") from err
+
+
+def secret_accepted(creds: OAuthClientCredentials) -> bool:
+    """Ask the identity provider whether it accepts this client's secret.
+
+    Uses the token revocation endpoint (RFC 7009), which always authenticates
+    the client. Revoking a token that does not exist changes nothing, so this is
+    safe to call.
+
+    Do not treat "I got a token" as proof the secret is valid: Authentik issues
+    client_credentials tokens to a service account (username + app password)
+    without checking client_secret at all.
+    """
+    if not creds.client_secret:
+        return False
+    revoke = creds.token_endpoint.replace("/token/", "/revoke/")  # Authentik layout
+    auth = base64.b64encode(f"{creds.client_id}:{creds.client_secret}".encode()).decode()
+    request = urllib.request.Request(
+        revoke,
+        data=urllib.parse.urlencode({"token": "courier-probe-not-a-real-token"}).encode(),
+        headers={"Authorization": "Basic " + auth, "Content-Type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30):
+            return True
+    except urllib.error.HTTPError as err:
+        if err.code in (400, 401):
+            return False
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:

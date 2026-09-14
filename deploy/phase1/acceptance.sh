@@ -3,7 +3,7 @@
 #
 #   1. kubectl apply an OAuthClient in namespace team-alpha; wait for Ready
 #   2. as a team-alpha identity: read the delivered credentials from Vault and
-#      use them to get a token from Authentik
+#      confirm Authentik accepts that secret (and rejects a wrong one)
 #   3. as a team-bravo identity: reading the same path is denied
 #   4. delete the OAuthClient: the credentials are destroyed
 #
@@ -95,13 +95,17 @@ if mode == "present":
           f"HTTP {st} state={data.get('state')}")
     st, _ = http(url, headers={"X-Vault-Token": bravo})
     check("team-bravo is denied", st == 403, f"HTTP {st}")
-    if data.get("token_endpoint"):
-        st, tok = http(data["token_endpoint"], {
-            "grant_type": "client_credentials", "client_id": data["client_id"], "client_secret": data["client_secret"],
-            "username": testers["alpha_username"], "password": testers["alpha_token"],
-            "scope": "openid profile groups",
-        }, form=True)
-        check("delivered credentials get a token from Authentik", st == 200, f"HTTP {st} {tok.get('error', '')}")
+    if data.get("token_endpoint") and data.get("client_secret"):
+        # The revocation endpoint always authenticates the client (200 accepted,
+        # 401 rejected). A client_credentials token request would not prove the
+        # secret: Authentik ignores it when a service account signs in.
+        revoke = data["token_endpoint"].replace("/token/", "/revoke/")
+        for label, candidate, want in (("Authentik accepts the delivered secret", data["client_secret"], 200),
+                                       ("Authentik rejects a wrong secret", "not-the-secret", 401)):
+            auth = base64.b64encode(f"{data['client_id']}:{candidate}".encode()).decode()
+            st, _ = http(revoke, {"token": "courier-probe-not-a-real-token"},
+                         headers={"Authorization": "Basic " + auth}, form=True)
+            check(label, st == want, f"HTTP {st}")
 else:
     st, _ = http(url, headers={"X-Vault-Token": alpha})
     check("credentials destroyed after the request is deleted", st == 404, f"HTTP {st}")

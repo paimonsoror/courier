@@ -5,7 +5,8 @@
 #
 # Logs in to Vault's jwt/ mount as the phase 0 test service account of every
 # team (alpha, bravo) and reads the request's secret path. The owning team must
-# get an active record, and its credentials must mint a token from Authentik.
+# get an active record, and Authentik must accept its secret (and reject a
+# wrong one).
 # Every other team must be denied. Never prints credentials.
 set -euo pipefail
 
@@ -79,14 +80,22 @@ for short in teams:
         data = (body.get("data") or {}).get("data") or {}
         check(f"{team} (owner) reads the credentials", st == 200 and data.get("state") == "active"
               and bool(data.get("client_secret")), f"HTTP {st} state={data.get('state')}")
-        if "client_credentials" not in data.get("grant_types", "").split():
-            print(f"SKIP  token test: {data.get('grant_types')} clients need a user sign-in, not client_credentials")
-        elif data.get("token_endpoint"):
-            code, err = http(data["token_endpoint"], {
-                "grant_type": "client_credentials", "client_id": data["client_id"],
-                "client_secret": data["client_secret"], "username": testers[f"{short}_username"],
-                "password": testers[f"{short}_token"], "scope": "openid profile groups"}, form=True)
-            check(f"{team} credentials get a token from Authentik", code == 200, f"HTTP {code} {err.get('error', '')}")
+        if data.get("token_endpoint") and data.get("client_secret"):
+            # The revocation endpoint always authenticates the client (200 accepted,
+            # 401 rejected). A client_credentials token request would not prove the
+            # secret: Authentik ignores it when a service account signs in.
+            revoke = data["token_endpoint"].replace("/token/", "/revoke/")
+
+            def secret_status(client_secret):
+                auth = base64.b64encode(f"{data['client_id']}:{client_secret}".encode()).decode()
+                code, _ = http(revoke, {"token": "courier-probe-not-a-real-token"},
+                               headers={"Authorization": "Basic " + auth}, form=True)
+                return code
+
+            code = secret_status(data["client_secret"])
+            check("Authentik accepts the delivered secret", code == 200, f"HTTP {code}")
+            code = secret_status("not-the-secret")
+            check("Authentik rejects a wrong secret (so the check above can fail)", code == 401, f"HTTP {code}")
     else:
         check(f"{team} is denied", st == 403, f"HTTP {st}")
     http(f"{vault}/v1/auth/token/revoke-self", {}, headers={"X-Vault-Token": vtok})

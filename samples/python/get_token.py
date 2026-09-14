@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import sys
 
-from courier_credentials import client_credentials_token, read_credentials, vault_client
+from courier_credentials import client_credentials_token, read_credentials, secret_accepted, vault_client
 
 
 def main() -> int:
@@ -25,6 +25,13 @@ def main() -> int:
     extra = {}
     if os.environ.get("AUTHENTIK_USERNAME"):
         extra = {"username": os.environ["AUTHENTIK_USERNAME"], "password": os.environ["AUTHENTIK_PASSWORD"]}
+
+    # With Authentik, the token below is issued on the strength of the service
+    # account's app password; the client secret is not checked. Verify it separately.
+    if not secret_accepted(creds):
+        print(f"client {creds.client_id}: the identity provider rejects the stored client secret", file=sys.stderr)
+        return 1
+    print(f"client {creds.client_id}: the identity provider accepts the stored client secret")
 
     token = client_credentials_token(creds, extra=extra)
     print(f"client {creds.client_id} obtained a {token.get('token_type')} token, expires in {token.get('expires_in')}s")

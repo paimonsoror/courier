@@ -67,10 +67,14 @@ entry = body["data"]["data"]
 version = body["data"]["metadata"]["version"]
 k8s = secret("team-bravo", "report-exporter-oauth")
 
-def token_status(client_secret):
-    code, _ = http(entry["token_endpoint"], {"grant_type": "client_credentials", "client_id": entry["client_id"],
-        "client_secret": client_secret, "username": testers["bravo_username"], "password": testers["bravo_token"],
-        "scope": "openid profile groups"}, form=True)
+def secret_status(client_secret):
+    # Authentik issues client_credentials tokens to a service account without
+    # checking client_secret, so getting a token proves nothing about the secret.
+    # The revocation endpoint always authenticates the client: 200 = accepted,
+    # 401 = rejected. Revoking a token that does not exist changes nothing.
+    auth = base64.b64encode(f"{entry['client_id']}:{client_secret}".encode()).decode()
+    code, _ = http(entry["token_endpoint"].replace("/token/", "/revoke/"), {"token": "courier-probe-not-a-real-token"},
+                   headers={"Authorization": "Basic " + auth}, form=True)
     return code
 
 print(f"      vault version {version}, state {entry['state']}, secret fingerprint {fp(entry['client_secret'])}")
@@ -80,14 +84,14 @@ if phase == "before-sync":
     check("vault holds a new secret; the synced copy still holds the previous one",
           k8s["client_secret"] != entry["client_secret"])
     check("client ID is unchanged by rotation", k8s["client_id"] == entry["client_id"])
-    code = token_status(k8s["client_secret"])
-    check("Authentik rejects the previous secret", code in (400, 401), f"HTTP {code}")
-    code = token_status(entry["client_secret"])
+    code = secret_status(k8s["client_secret"])
+    check("Authentik rejects the previous secret", code == 401, f"HTTP {code}")
+    code = secret_status(entry["client_secret"])
     check("Authentik accepts the new secret", code == 200, f"HTTP {code}")
 else:
     check("External Secrets now holds the new secret", k8s["client_secret"] == entry["client_secret"])
-    code = token_status(k8s["client_secret"])
-    check("the synced copy works", code == 200, f"HTTP {code}")
+    code = secret_status(k8s["client_secret"])
+    check("Authentik accepts the synced copy", code == 200, f"HTTP {code}")
 
 http(f"{vault}/v1/auth/token/revoke-self", {}, headers={"X-Vault-Token": vtok})
 sys.exit(1 if failures else 0)

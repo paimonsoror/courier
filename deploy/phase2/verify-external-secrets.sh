@@ -4,7 +4,7 @@
 #
 #   1. team-bravo's SecretStore is Ready
 #   2. an ExternalSecret in team-bravo syncs report-exporter's credentials into
-#      a Kubernetes Secret, and those credentials obtain a token from Authentik
+#      a Kubernetes Secret, and Authentik accepts the synced secret
 #   3. an ExternalSecret in team-alpha that points at team-bravo's path fails
 #      with permission denied, and no Secret is created
 #
@@ -43,15 +43,19 @@ def sec(ns, name):
     return {k: base64.b64decode(v).decode() for k, v in json.loads(raw)["data"].items()}
 d = {k: base64.b64decode(v).decode() for k, v in json.load(sys.stdin)["data"].items()}
 t = sec("vault", "courier-phase0-testers")
-form = {"grant_type": "client_credentials", "client_id": d["client_id"], "client_secret": d["client_secret"],
-        "username": t["bravo_username"], "password": t["bravo_token"], "scope": d.get("scopes", "openid")}
+# The revocation endpoint authenticates the client: 200 = Authentik accepts
+# the synced client_id/secret. (A client_credentials token request would not.)
+auth = base64.b64encode(f"{d['client_id']}:{d['client_secret']}".encode()).decode()
+req = urllib.request.Request(d["token_endpoint"].replace("/token/", "/revoke/"),
+    data=urllib.parse.urlencode({"token": "courier-probe-not-a-real-token"}).encode(),
+    headers={"Authorization": "Basic " + auth})
 try:
-    urllib.request.urlopen(d["token_endpoint"], data=urllib.parse.urlencode(form).encode(), timeout=30)
+    urllib.request.urlopen(req, timeout=30)
     print(200)
 except urllib.error.HTTPError as e:
     print(e.code)
 ')"
-[ "$code" = "200" ] && pass "synced credentials obtain a token from Authentik" || bad "token request with synced credentials returned HTTP $code"
+[ "$code" = "200" ] && pass "Authentik accepts the synced secret" || bad "Authentik rejected the synced secret (HTTP $code)"
 
 echo "==> cross-team attempt (team-alpha -> team-bravo path)"
 kubectl apply -f - >/dev/null <<'YAML'

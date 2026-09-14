@@ -54,8 +54,23 @@ deploy/phase1/integration-test.sh               # adapters + broker against real
 - the `OAuthClient` becomes `Ready`
 - a team-alpha identity reads `state=active` credentials at `status.secretPath`
 - a team-bravo identity gets 403 on the same path
-- the delivered `client_id`/`client_secret` obtain a token from Authentik
+- Authentik accepts the delivered `client_id`/`client_secret` and rejects a
+  wrong secret, checked at the token revocation endpoint (see note below)
 - after `kubectl delete`, the path returns 404
+
+### Why not "the credentials get a token"?
+
+Authentik's `client_credentials` grant also accepts a service account's
+username and app password. When those are present, Authentik returns a token
+**no matter what `client_secret` is sent** (checked 2026-09-14 on Authentik
+2026.8.2 with the correct, previous, made-up and missing secrets: all HTTP
+200). A token therefore proves the service account, not the client secret.
+
+The token revocation endpoint (`/application/o/revoke/`, RFC 7009) always
+authenticates the client with HTTP Basic `client_id:client_secret`: the right
+secret gets 200, anything else gets 401 `invalid_client`. Revoking a made-up
+token has no effect, so the check is safe. Every Courier verification script
+uses it.
 
 ## Known limits (tracked for later phases)
 
