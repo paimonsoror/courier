@@ -100,6 +100,17 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: set
+              rotation:
+                description: |-
+                  rotation configures automatic secret rotation (confidential clients only).
+                  On-demand rotation uses the courier.sororlab.dev/rotate annotation.
+                properties:
+                  maxAgeDays:
+                    description: maxAgeDays issues a new client secret once the current
+                      one is older than this.
+                    minimum: 1
+                    type: integer
+                type: object
               scopes:
                 description: scopes requested by the client. Defaults to [openid].
                 items:
@@ -201,6 +212,11 @@ spec:
                 description: observedGeneration is the spec generation last reconciled.
                 format: int64
                 type: integer
+              rotationHandled:
+                description: |-
+                  rotationHandled is the value of the courier.sororlab.dev/rotate annotation
+                  that was last acted on. Changing the annotation to a new value rotates again.
+                type: string
               secretPath:
                 description: secretPath is where the owning team reads the credentials.
                 type: string
