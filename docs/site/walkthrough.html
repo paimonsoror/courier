@@ -421,6 +421,12 @@ ADOPTION VERIFIED</code></pre>
 
       <h3>Drift repair that stays quiet</h3>
       <p>Before Phase 4, every ten-minute resync rewrote every client in Authentik: 12 <code>model_updated</code> events an hour for report-exporter alone. Phase 4 compares first and writes only on a difference. In the first 16 minutes after rollout, billing-sync had no events and report-exporter had one, the rotation. orders-portal still had one every resync, because Authentik adds <code>redirect_uri_type</code> to redirect URIs and the controller did not send it; that was fixed in <code>8e454ad</code>.</p>
+<pre><code>now (UTC): 13:30:17 | minutes since sha-8e454ad rolled out: 695
+team-alpha-billing-sync: 0 model_updated since rollout []
+team-bravo-report-exporter: 0 model_updated since rollout []
+team-alpha-orders-portal: 0 model_updated since rollout []
+legacy-crm: 0 model_updated since rollout []</code></pre>
+      <p><strong>After the fix: zero writes in 11½ hours</strong>, about 69 resyncs per client, across all four clients, including the sign-in client and the adopted one. The controller still checks every client every ten minutes; it just no longer touches anything that has not changed.</p>
     </section>
 
     <section id="learned">
