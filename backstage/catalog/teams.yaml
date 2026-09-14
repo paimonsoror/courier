@@ -1,0 +1,26 @@
+# Courier teams as Backstage groups. Names match the identity-provider groups,
+# the request directories and the Kubernetes namespaces. spec.type
+# courier-team is what the request template's owner picker filters on.
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: team-alpha
+  title: Team Alpha
+  description: Owns team-alpha OAuth clients and reads kv/teams/team-alpha/.
+spec:
+  type: courier-team
+  parent: sororlab
+  children: []
+  members:
+    - paimon
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: team-bravo
+  title: Team Bravo
+  description: Owns team-bravo OAuth clients and reads kv/teams/team-bravo/.
+spec:
+  type: courier-team
+  parent: sororlab
+  children: []

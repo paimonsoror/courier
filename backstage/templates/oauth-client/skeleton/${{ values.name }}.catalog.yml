@@ -1,0 +1,20 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: ${{ values.team }}-${{ values.name }}
+  title: "${{ values.displayName if values.displayName else values.team + '/' + values.name }}"
+  description: OAuth client delivered by Courier.
+  annotations:
+    backstage.io/kubernetes-namespace: ${{ values.team }}
+    backstage.io/kubernetes-label-selector: courier.sororlab.dev/client=${{ values.name }}
+    courier.sororlab.dev/secret-path: kv/teams/${{ values.team }}/oauth-clients/${{ values.team }}-${{ values.name }}
+  tags:
+    - oauth-client
+    - courier
+  links:
+    - url: https://paimonsoror.github.io/courier/site/use-credentials.html
+      title: Use your credentials
+      icon: docs
+spec:
+  type: oauth-client
+  owner: group:default/${{ values.team }}

@@ -1,0 +1,20 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: team-alpha-billing-sync
+  title: "team-alpha: billing sync job"
+  description: OAuth client delivered by Courier.
+  annotations:
+    backstage.io/kubernetes-namespace: team-alpha
+    backstage.io/kubernetes-label-selector: courier.sororlab.dev/client=billing-sync
+    courier.sororlab.dev/secret-path: kv/teams/team-alpha/oauth-clients/team-alpha-billing-sync
+  tags:
+    - oauth-client
+    - courier
+  links:
+    - url: https://paimonsoror.github.io/courier/site/use-credentials.html
+      title: Use your credentials
+      icon: docs
+spec:
+  type: oauth-client
+  owner: group:default/team-alpha

@@ -3,6 +3,8 @@ kind: OAuthClient
 metadata:
   name: billing-sync
   namespace: team-alpha
+  labels:
+    courier.sororlab.dev/client: billing-sync
 spec:
   displayName: "team-alpha: billing sync job"
   clientType: confidential

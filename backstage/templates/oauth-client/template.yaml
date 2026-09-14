@@ -1,0 +1,161 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: courier-oauth-client
+  title: Request an OAuth client
+  description: >-
+    Opens a pull request in the Courier request repository. After a code owner
+    approves and it merges, Courier creates the client and delivers its
+    credentials to your team's Vault path. Nobody emails a secret.
+  tags:
+    - oauth
+    - identity
+    - courier
+  links:
+    - url: https://paimonsoror.github.io/courier/site/request-a-client.html
+      title: Request a client guide
+      icon: docs
+spec:
+  owner: group:default/sororlab
+  type: oauth-client
+
+  parameters:
+    - title: Owner and name
+      required:
+        - team
+        - name
+      properties:
+        team:
+          title: Owning team
+          type: string
+          description: >-
+            The identity-provider group that owns the client. Only its members
+            can read the credentials.
+          ui:field: EntityPicker
+          ui:options:
+            catalogFilter:
+              kind: Group
+              spec.type: courier-team
+            defaultKind: Group
+            allowArbitraryValues: false
+        name:
+          title: Client name
+          type: string
+          description: Lowercase letters, digits and hyphens, e.g. orders-portal.
+          pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+          maxLength: 40
+          ui:autofocus: true
+        displayName:
+          title: Display name
+          type: string
+          description: Shown on the sign-in and consent screens. Optional.
+
+    - title: Client
+      required:
+        - clientType
+        - grantTypes
+      properties:
+        clientType:
+          title: Client type
+          type: string
+          default: confidential
+          enum:
+            - confidential
+            - public
+          enumNames:
+            - Confidential (runs on a server, gets a secret)
+            - Public (installed app or SPA, PKCE, no secret)
+        grantTypes:
+          title: Grant types
+          type: array
+          description: client_credentials needs security approval on the pull request.
+          uniqueItems: true
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - authorization_code
+              - refresh_token
+              - client_credentials
+          ui:widget: checkboxes
+        redirectUris:
+          title: Redirect URIs
+          type: array
+          description: Required for authorization_code. https only (http://localhost for public clients).
+          items:
+            type: string
+        scopes:
+          title: Scopes
+          type: array
+          default:
+            - openid
+          items:
+            type: string
+
+    - title: Why
+      required:
+        - purpose
+      properties:
+        purpose:
+          title: What is this client for?
+          type: string
+          description: Goes into the pull request so reviewers can approve it.
+          ui:widget: textarea
+
+  steps:
+    - id: render
+      name: Render the request
+      action: fetch:template
+      input:
+        url: ./skeleton
+        targetPath: ./requests/${{ parameters.team | parseEntityRef | pick('name') }}
+        values:
+          team: ${{ parameters.team | parseEntityRef | pick('name') }}
+          name: ${{ parameters.name }}
+          displayName: ${{ parameters.displayName }}
+          clientType: ${{ parameters.clientType }}
+          grantTypes: ${{ parameters.grantTypes }}
+          redirectUris: ${{ parameters.redirectUris }}
+          scopes: ${{ parameters.scopes }}
+
+    - id: pr
+      name: Open the pull request
+      action: publish:github:pull-request
+      input:
+        repoUrl: github.com?owner=paimonsoror&repo=courier
+        branchName: request/${{ parameters.team | parseEntityRef | pick('name') }}-${{ parameters.name }}
+        title: >-
+          request: ${{ parameters.team | parseEntityRef | pick('name') }}
+          ${{ parameters.name }} (${{ parameters.grantTypes | join(', ') }})
+        commitMessage: >-
+          request: ${{ parameters.team | parseEntityRef | pick('name') }} ${{ parameters.name }}
+        description: |
+          ## OAuth client request
+
+          | | |
+          |---|---|
+          | Team | `${{ parameters.team | parseEntityRef | pick('name') }}` |
+          | Client | `${{ parameters.name }}` |
+          | Type | `${{ parameters.clientType }}` |
+          | Grants | `${{ parameters.grantTypes | join(', ') }}` |
+          | Requested by | `${{ user.entity.metadata.name if user.entity else 'unknown' }}` |
+
+          **Purpose:** ${{ parameters.purpose }}
+
+          Credentials will be delivered to
+          `kv/teams/${{ parameters.team | parseEntityRef | pick('name') }}/oauth-clients/${{ parameters.team | parseEntityRef | pick('name') }}-${{ parameters.name }}`
+          after merge.
+
+          {% if 'client_credentials' in parameters.grantTypes %}
+          > **Needs security approval:** this client uses `client_credentials`. The
+          > identity or security team must add the `security-approved` label.
+          {% endif %}
+
+          Opened from Backstage by the Courier request template.
+
+  output:
+    links:
+      - title: Pull request
+        url: ${{ steps.pr.output.remoteUrl }}
+      - title: What happens next
+        url: https://paimonsoror.github.io/courier/site/request-a-client.html#pr

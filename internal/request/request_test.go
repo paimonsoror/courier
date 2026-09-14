@@ -145,6 +145,55 @@ func TestDuplicates(t *testing.T) {
 	wantFinding(t, findings, "duplicate request team-alpha/dup")
 }
 
+func catalogEntry(team, name, owner, selector string) string {
+	return "apiVersion: backstage.io/v1alpha1\nkind: Resource\nmetadata:\n  name: " + team + "-" + name +
+		"\n  annotations:\n    backstage.io/kubernetes-namespace: " + team +
+		"\n    backstage.io/kubernetes-label-selector: " + selector +
+		"\nspec:\n  type: oauth-client\n  owner: " + owner + "\n"
+}
+
+func withClientLabel(body, value string) string {
+	return strings.Replace(body, "  namespace: team-alpha\n",
+		"  namespace: team-alpha\n  labels:\n    courier.sororlab.dev/client: "+value+"\n", 1)
+}
+
+func TestCatalogEntries(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"team-alpha/web.yaml": withClientLabel(
+			oauthClient(teamAlpha, "web", authCode+"  redirectUris: [https://app.sororlab.dev/cb]\n"), "web"),
+		"team-alpha/web.catalog.yml": catalogEntry(teamAlpha, "web", "group:default/team-alpha",
+			"courier.sororlab.dev/client=web"),
+		"team-alpha/m2m.yaml": oauthClient(teamAlpha, "m2m", m2mGrant),
+		"team-alpha/m2m.catalog.yml": catalogEntry(teamAlpha, "m2m", "group:default/team-bravo",
+			"courier.sororlab.dev/client=m2m"),
+		"team-alpha/ghost.catalog.yml": catalogEntry(teamAlpha, "ghost", "group:default/team-alpha",
+			"courier.sororlab.dev/client=ghost"),
+		"team-alpha/mislabeled.yaml": withClientLabel(oauthClient(teamAlpha, "mislabeled", m2mGrant), "other"),
+	})
+	reqs, findings, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("catalog files must not be loaded as requests: %v", findings)
+	}
+
+	wantFinding(t, Check(reqs, Options{Root: root, Policy: policy}), `label courier.sororlab.dev/client must be "mislabeled"`)
+
+	cat, err := CheckCatalog(root, reqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range cat {
+		if strings.HasSuffix(f.File, "/web.catalog.yml") {
+			t.Fatalf("valid entry flagged: %v", f)
+		}
+	}
+	wantFinding(t, cat, `spec.owner "group:default/team-bravo" must be group:default/team-alpha`)
+	wantFinding(t, cat, "must carry label courier.sororlab.dev/client: m2m")
+	wantFinding(t, cat, "no request team-alpha/ghost.yaml")
+}
+
 func TestSummary(t *testing.T) {
 	root := writeTree(t, map[string]string{newM2MFile: oauthClient(teamAlpha, newM2M, m2mGrant)})
 	reqs, _, err := Load(root)

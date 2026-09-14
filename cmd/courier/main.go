@@ -68,6 +68,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Labels:           splitList(*labels),
 	}
 	findings = append(findings, request.Check(reqs, opts)...)
+	catalogFindings, err := request.CheckCatalog(root, reqs)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "catalog:", err)
+		return 2
+	}
+	findings = append(findings, catalogFindings...)
 
 	if *summaryFile != "" {
 		if err := appendFile(*summaryFile, request.Summary(reqs, opts, findings, *mount)); err != nil {

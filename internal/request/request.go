@@ -29,6 +29,13 @@ import (
 const (
 	requestAPIVersion = "courier.sororlab.dev/v1alpha1"
 	requestKind       = "OAuthClient"
+
+	// catalogSuffix marks an optional Backstage entity file next to a request:
+	// <root>/<team>/<name>.catalog.yml. ArgoCD only syncs *.yaml, so these are
+	// never applied to the cluster.
+	catalogSuffix = ".catalog.yml"
+	// ClientLabel ties an OAuthClient to its Backstage entity's label selector.
+	ClientLabel = "courier.sororlab.dev/client"
 )
 
 // ToClientSpec maps a request onto the core spec. The IdP-side name is
@@ -136,6 +143,9 @@ func IsRequestFile(root, file string) bool {
 	if len(parts) != 2 || strings.HasPrefix(parts[0], ".") || strings.HasPrefix(parts[1], ".") {
 		return false
 	}
+	if strings.HasSuffix(parts[1], catalogSuffix) {
+		return false
+	}
 	ext := path.Ext(parts[1])
 	return ext == ".yaml" || ext == ".yml"
 }
@@ -155,7 +165,7 @@ func Load(root string) ([]Request, []Finding, error) {
 			}
 			return nil
 		}
-		if ext := filepath.Ext(p); d.IsDir() || (ext != ".yaml" && ext != ".yml") {
+		if ext := filepath.Ext(p); d.IsDir() || (ext != ".yaml" && ext != ".yml") || strings.HasSuffix(p, catalogSuffix) {
 			return nil
 		}
 		file := filepath.ToSlash(p)
@@ -265,6 +275,9 @@ func Check(reqs []Request, o Options) []Finding {
 		if oc.Name != base {
 			add(r.File, "metadata.name %q must match the file name %q", oc.Name, base)
 		}
+		if v, ok := oc.Labels[ClientLabel]; ok && v != oc.Name {
+			add(r.File, "label %s must be %q", ClientLabel, oc.Name)
+		}
 		key := oc.Namespace + "/" + oc.Name
 		if prev, dup := seen[key]; dup {
 			add(r.File, "duplicate request %s (also in %s)", key, prev)
@@ -365,6 +378,80 @@ func Summary(reqs []Request, o Options, findings []Finding, vaultMount string) s
 		fmt.Fprintf(&b, "- `%s`: %s\n", f.File, f.Message)
 	}
 	return b.String()
+}
+
+type catalogEntity struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Metadata   struct {
+		Name        string            `json:"name"`
+		Annotations map[string]string `json:"annotations"`
+	} `json:"metadata"`
+	Spec struct {
+		Type  string `json:"type"`
+		Owner string `json:"owner"`
+	} `json:"spec"`
+}
+
+// CheckCatalog validates the optional Backstage entity files
+// (<root>/<team>/<name>.catalog.yml) against the requests they describe, so a
+// catalog entry can never claim another team's client or show its status.
+func CheckCatalog(root string, reqs []Request) ([]Finding, error) {
+	byKey := map[string]*courierv1alpha1.OAuthClient{}
+	for i := range reqs {
+		oc := &reqs[i].Client
+		byKey[oc.Namespace+"/"+oc.Name] = oc
+	}
+	files, err := filepath.Glob(filepath.Join(root, "*", "*"+catalogSuffix))
+	if err != nil {
+		return nil, err
+	}
+	var out []Finding
+	for _, f := range files {
+		file := filepath.ToSlash(f)
+		team := path.Base(path.Dir(file))
+		base := strings.TrimSuffix(path.Base(file), catalogSuffix)
+		add := func(format string, args ...any) {
+			out = append(out, Finding{file, fmt.Sprintf(format, args...)})
+		}
+
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		var e catalogEntity
+		if err := yaml.Unmarshal(raw, &e); err != nil {
+			add("not valid YAML: %v", err)
+			continue
+		}
+		oc, ok := byKey[team+"/"+base]
+		if !ok {
+			add("no request %s/%s.yaml for this catalog entry", team, base)
+			continue
+		}
+		if e.APIVersion != "backstage.io/v1alpha1" || e.Kind != "Resource" {
+			add("must be a backstage.io/v1alpha1 Resource")
+		}
+		if want := team + "-" + base; e.Metadata.Name != want {
+			add("metadata.name %q must be %q", e.Metadata.Name, want)
+		}
+		if e.Spec.Type != "oauth-client" {
+			add("spec.type %q must be oauth-client", e.Spec.Type)
+		}
+		if e.Spec.Owner != "group:"+team && e.Spec.Owner != "group:default/"+team {
+			add("spec.owner %q must be group:default/%s", e.Spec.Owner, team)
+		}
+		if v := e.Metadata.Annotations["backstage.io/kubernetes-namespace"]; v != team {
+			add("annotation backstage.io/kubernetes-namespace %q must be %q", v, team)
+		}
+		if v, want := e.Metadata.Annotations["backstage.io/kubernetes-label-selector"], ClientLabel+"="+base; v != want {
+			add("annotation backstage.io/kubernetes-label-selector %q must be %q", v, want)
+		}
+		if oc.Labels[ClientLabel] != base {
+			add("request %s/%s.yaml must carry label %s: %s for this entry to find it", team, base, ClientLabel, base)
+		}
+	}
+	return out, nil
 }
 
 func approvalCell(oc *courierv1alpha1.OAuthClient, o Options) string {

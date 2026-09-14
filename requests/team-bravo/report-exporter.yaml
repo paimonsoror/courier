@@ -3,6 +3,8 @@ kind: OAuthClient
 metadata:
   name: report-exporter
   namespace: team-bravo
+  labels:
+    courier.sororlab.dev/client: report-exporter
 spec:
   displayName: "team-bravo: nightly report exporter"
   clientType: confidential

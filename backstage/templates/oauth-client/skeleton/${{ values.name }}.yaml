@@ -1,0 +1,28 @@
+apiVersion: courier.sororlab.dev/v1alpha1
+kind: OAuthClient
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.team }}
+  labels:
+    courier.sororlab.dev/client: ${{ values.name }}
+spec:
+{%- if values.displayName %}
+  displayName: "${{ values.displayName }}"
+{%- endif %}
+  clientType: ${{ values.clientType }}
+  grantTypes:
+{%- for grant in values.grantTypes %}
+    - ${{ grant }}
+{%- endfor %}
+{%- if values.redirectUris and values.redirectUris.length > 0 %}
+  redirectUris:
+{%- for uri in values.redirectUris %}
+    - ${{ uri }}
+{%- endfor %}
+{%- endif %}
+{%- if values.scopes and values.scopes.length > 0 %}
+  scopes:
+{%- for scope in values.scopes %}
+    - ${{ scope }}
+{%- endfor %}
+{%- endif %}
