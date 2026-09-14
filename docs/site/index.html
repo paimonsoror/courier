@@ -45,7 +45,7 @@
       <div class="meta">
         <span class="audience">Identity and security leaders</span>
         <span>Reading time <b>8 minutes</b></span>
-        <span>Status <b>Proof of value, phase 2</b></span>
+        <span>Status <b>Proof of value, phase 4</b></span>
       </div>
       <h1>Every OAuth client delivered to the team that owns it, with no secret changing hands</h1>
       <p class="lede">Courier turns OAuth client registration into a reviewed request. After approval it creates the client in the identity provider and places the credentials in a vault path that only the owning team's identity group can open. Nobody copies, emails or pastes a <code>client_secret</code>.</p>
@@ -158,8 +158,8 @@
             </tr>
             <tr>
               <td><strong>Only touches what it created</strong></td>
-              <td>Existing, hand-built clients are safe from accidental changes.</td>
-              <td>Courier marks its applications and refuses to modify any application without the marker.</td>
+              <td>Existing, hand-built clients are safe from accidental changes. Taking one over is a deliberate, approved step.</td>
+              <td>Courier marks its applications with the owning team and refuses to modify any application without the marker, or owned by another team, unless an adoption request carries the identity team's approval label.</td>
             </tr>
             <tr>
               <td><strong>Every rule is checked twice</strong></td>
