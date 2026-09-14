@@ -1,0 +1,17 @@
+apiVersion: courier.sororlab.dev/v1alpha1
+kind: OAuthClient
+metadata:
+  name: orders-portal
+  namespace: team-alpha
+  labels:
+    courier.sororlab.dev/client: orders-portal
+spec:
+  displayName: "team-alpha: orders portal"
+  clientType: confidential
+  grantTypes:
+    - authorization_code
+    - refresh_token
+  redirectUris:
+    - https://orders.sororlab.dev/oauth/callback
+  scopes:
+    - openid
