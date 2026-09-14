@@ -340,6 +340,10 @@ ACCESS CHECK PASSED</code></pre>
           </tbody>
         </table>
       </div>
+      <figure class="shot">
+        <img src="assets/screenshots/pr3-vault-rotation-history.jpg" alt="Vault version history for teams/team-bravo/oauth-clients/team-bravo-report-exporter: version 8 current and version 7 created 09:38 PM; versions 3 to 6 created ten minutes apart between 05:51 and 06:21 PM; versions 1 and 2 at 05:41 PM" loading="lazy">
+        <figcaption><b>The whole life of team-bravo's secret, in the vault.</b> Versions 1–2: first delivery (stored as pending, then promoted to active). Versions 3–6: the early resync bug that rewrote metadata every ten minutes, fixed in <code>2ed3a9d</code>. Versions 7–8: this rotation, pending then active. Nothing after, through later resyncs. Times in the browser's zone (UTC−4).</figcaption>
+      </figure>
 <pre><code>$ deploy/phase4/verify-rotation.sh
 ==> request status
 lastSecretIssued: 2026-09-14T01:38:54Z
@@ -391,6 +395,10 @@ ROTATION VERIFIED</code></pre>
       <figure class="shot">
         <img src="assets/screenshots/pr4-authentik-adopted-changelog.jpg" alt="Authentik changelog for the adopted application: Model created by akadmin at 9:31:40 PM, then Model updated by courier-controller at 9:38:46 PM and 9:38:50 PM, nothing after" loading="lazy">
         <figcaption><b>Its whole history.</b> Created by hand (<code>akadmin</code>, 01:31:40 UTC), taken over by <code>courier-controller</code> in two writes at 01:38, then nothing: nineteen minutes and two resyncs later there are no further updates. Times shown in the browser's zone (UTC−4).</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/pr4-vault-adopted-history.jpg" alt="Vault version history for teams/team-alpha/oauth-clients/legacy-crm: version 2 current and version 1, both created 09:38 PM" loading="lazy">
+        <figcaption><b>The adopted client's vault entry.</b> Two versions at adoption, the new secret stored as pending and then promoted to active, and none since.</figcaption>
       </figure>
 <pre><code>$ deploy/phase4/verify-adoption.sh
 NAME   READY   TYPE           CLIENT ID                                  SECRET PATH
