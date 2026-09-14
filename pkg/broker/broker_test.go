@@ -31,7 +31,7 @@ func (f *fakeIDP) Adopt(_ context.Context, spec courier.ClientSpec) (courier.Cli
 }
 
 type fakeIDP struct {
-	unmanaged map[string]bool
+	unmanaged  map[string]bool
 	log        *events
 	clients    map[string]courier.ClientRef
 	secrets    map[string]string

@@ -2,25 +2,38 @@ package authentik
 
 import "testing"
 
+const (
+	keyProvider     = "provider"
+	keyGrantTypes   = "grant_types"
+	keyRedirectURIs = "redirect_uris"
+	keyMatchingMode = "matching_mode"
+	keyURL          = "url"
+	grantAuthCode   = "authorization_code"
+	grantRefresh    = "refresh_token"
+	strict          = "strict"
+	redirectA       = "https://a.example/cb"
+	redirectB       = "https://b.example/cb"
+)
+
 func TestDiffers(t *testing.T) {
 	current := map[string]any{
-		"name":        "courier-team-alpha-orders-portal",
-		"provider":    float64(12),
-		"grant_types": []any{"refresh_token", "authorization_code"},
-		"redirect_uris": []any{
-			map[string]any{"url": "https://b.example/cb", "matching_mode": "strict"},
-			map[string]any{"matching_mode": "strict", "url": "https://a.example/cb"},
+		"name":      "courier-team-alpha-orders-portal",
+		keyProvider: float64(12),
+		keyGrantTypes: []any{grantRefresh, grantAuthCode},
+		keyRedirectURIs: []any{
+			map[string]any{keyURL: redirectB, keyMatchingMode: strict},
+			map[string]any{keyMatchingMode: strict, keyURL: redirectA},
 		},
 		"client_secret": "never compared",
 	}
 
 	same := map[string]any{
 		"name":        "courier-team-alpha-orders-portal",
-		"provider":    12,
-		"grant_types": []string{"authorization_code", "refresh_token"},
-		"redirect_uris": []map[string]string{
-			{"matching_mode": "strict", "url": "https://a.example/cb"},
-			{"matching_mode": "strict", "url": "https://b.example/cb"},
+		keyProvider:   12,
+		keyGrantTypes: []string{grantAuthCode, grantRefresh},
+		keyRedirectURIs: []map[string]string{
+			{keyMatchingMode: strict, keyURL: redirectA},
+			{keyMatchingMode: strict, keyURL: redirectB},
 		},
 	}
 	if differs(same, current) {
@@ -28,10 +41,10 @@ func TestDiffers(t *testing.T) {
 	}
 
 	for name, want := range map[string]map[string]any{
-		"grant removed":   {"grant_types": []string{"authorization_code"}},
-		"redirect edited": {"redirect_uris": []map[string]string{{"matching_mode": "strict", "url": "https://c.example/cb"}}},
+		"grant removed":   {keyGrantTypes: []string{grantAuthCode}},
+		"redirect edited": {keyRedirectURIs: []map[string]string{{keyMatchingMode: strict, keyURL: "https://c.example/cb"}}},
 		"field missing":   {"include_claims_in_id_token": true},
-		"value changed":   {"provider": 13},
+		"value changed":   {keyProvider: 13},
 	} {
 		if !differs(want, current) {
 			t.Fatalf("%s: drift not detected", name)
