@@ -1,0 +1,21 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: team-alpha-crm
+  title: "team-alpha: CRM integration (adopted)"
+  description: Hand-built OAuth client adopted by Courier.
+  annotations:
+    backstage.io/kubernetes-namespace: team-alpha
+    backstage.io/kubernetes-label-selector: courier.sororlab.dev/client=crm
+    courier.sororlab.dev/secret-path: kv/teams/team-alpha/oauth-clients/legacy-crm
+  tags:
+    - oauth-client
+    - courier
+    - adopted
+  links:
+    - url: https://paimonsoror.github.io/courier/site/use-credentials.html
+      title: Use your credentials
+      icon: docs
+spec:
+  type: oauth-client
+  owner: group:default/team-alpha

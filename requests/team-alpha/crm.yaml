@@ -1,0 +1,20 @@
+apiVersion: courier.sororlab.dev/v1alpha1
+kind: OAuthClient
+metadata:
+  name: crm
+  namespace: team-alpha
+  labels:
+    courier.sororlab.dev/client: crm
+  annotations:
+    # Take over the hand-built Authentik application "legacy-crm".
+    # Courier keeps its client ID and issues a new secret on adoption.
+    courier.sororlab.dev/adopt: legacy-crm
+spec:
+  displayName: "team-alpha: CRM integration (adopted)"
+  clientType: confidential
+  grantTypes:
+    - client_credentials
+  scopes:
+    - openid
+    - profile
+    - groups
