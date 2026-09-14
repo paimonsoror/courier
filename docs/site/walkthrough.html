@@ -209,13 +209,27 @@ request team-bravo/report-exporter is Ready; credentials at kv/teams/team-bravo/
 <span class="k">PASS</span>  team-bravo credentials get a token from Authentik
 
 ACCESS CHECK PASSED</code></pre>
+      <div class="callout warn">
+        <span class="label">Correction, 14 September 2026</span>
+        <p>The third line above did not prove what we said. Authentik's <code>client_credentials</code> grant also takes a service account's username and app password, and when those are present it returns a token <strong>whatever <code>client_secret</code> is sent</strong>. We found this while verifying rotation: the old, a made-up and a missing secret all got HTTP 200. The token proved the service account, not the client secret.</p>
+        <p>The check now asks Authentik's token revocation endpoint, which always authenticates the client with <code>client_id:client_secret</code>: 200 for the right secret, 401 <code>invalid_client</code> for anything else. It also sends a wrong secret, so the check can visibly fail. Re-run against the same client:</p>
+      </div>
+<pre><code>$ deploy/phase2/check-access.sh team-bravo report-exporter
+request team-bravo/report-exporter is Ready; credentials at kv/teams/team-bravo/oauth-clients/team-bravo-report-exporter
+<span class="k">PASS</span>  team-alpha is denied
+<span class="k">PASS</span>  team-bravo (owner) reads the credentials
+<span class="k">PASS</span>  Authentik accepts the delivered secret
+<span class="k">PASS</span>  Authentik rejects a wrong secret (so the check above can fail)
+
+ACCESS CHECK PASSED</code></pre>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Result</th><th>What it proves</th></tr></thead>
           <tbody>
             <tr><td>team-alpha is denied</td><td>Another team, signed in with a valid identity, gets HTTP 403. Access follows identity groups, not knowledge of the path.</td></tr>
             <tr><td>team-bravo reads the credentials</td><td>The owning team's identity maps to its vault policy, and the entry is <code>state: active</code> with a secret present.</td></tr>
-            <tr><td>credentials get a token from Authentik</td><td>The secret in the vault is the live one: a <code>client_credentials</code> request with it returns HTTP 200.</td></tr>
+            <tr><td>Authentik accepts the delivered secret</td><td>The secret in the vault is the live one: the revocation endpoint authenticates <code>client_id:client_secret</code> and returns HTTP 200.</td></tr>
+            <tr><td>Authentik rejects a wrong secret</td><td>The same call with a wrong secret returns HTTP 401, so the previous line is a real test and not a formality.</td></tr>
           </tbody>
         </table>
       </div>

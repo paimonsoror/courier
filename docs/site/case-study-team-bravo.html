@@ -334,7 +334,7 @@ identity group team-bravo-jwt   alias team-bravo on jwt/   →  policy team-brav
           <ul>
             <li><strong>People</strong> in the team-bravo group sign in with <code>vault login -method=oidc</code> and read the credentials</li>
             <li><strong>Workloads</strong> with a team-bravo identity log in to Vault (<code>jwt/</code>, role <code>machine</code>) and read them at start-up</li>
-            <li>Exchange them for <strong>access tokens</strong> at the token endpoint (<code>client_credentials</code>, valid 1 hour); verified with HTTP 200</li>
+            <li>Exchange them for <strong>access tokens</strong> at the token endpoint (<code>client_credentials</code>, valid 1 hour). Authentik accepts the stored secret (HTTP 200 at the revocation endpoint) and rejects a wrong one (HTTP 401); see the correction in the <a href="walkthrough.html#access">walkthrough</a> for why a token alone is not proof</li>
             <li><strong>Change</strong> the client (scopes, display name, groups) with a pull request; the secret stays the same</li>
             <li><strong>Retire</strong> it with a pull request; the client is deleted and the secret destroyed</li>
             <li><strong>See status</strong> in ArgoCD (<code>courier-requests-team-bravo</code>) or with <code>kubectl -n team-bravo get oauthclients</code></li>
@@ -357,7 +357,7 @@ identity group team-bravo-jwt   alias team-bravo on jwt/   →  policy team-brav
           <thead><tr><th>Capability</th><th>What team-bravo gets</th><th>Verified</th></tr></thead>
           <tbody>
             <tr><td>Vault connection in its namespace</td><td>ServiceAccount <code>courier-secrets</code> and SecretStore <code>courier-vault</code>, created automatically by ArgoCD application <code>courier-team-access-team-bravo</code></td><td><span class="pill p-good">Ready</span></td></tr>
-            <tr><td>External Secrets sync</td><td>ExternalSecret <code>report-exporter-oauth</code> produces a Secret with all 14 fields; the synced credentials obtain a token</td><td><span class="pill p-good">22:19:44</span> vault read ok</td></tr>
+            <tr><td>External Secrets sync</td><td>ExternalSecret <code>report-exporter-oauth</code> produces a Secret with all 14 fields; Authentik accepts the synced secret</td><td><span class="pill p-good">22:19:44</span> vault read ok</td></tr>
             <tr><td>Python sample</td><td><code>read_credentials(vault_client(), "team-bravo", "report-exporter")</code> as the workload's own identity, then a one-hour bearer token</td><td><span class="pill p-good">passed</span></td></tr>
             <tr><td>Isolation from other teams</td><td>team-alpha's store and team-alpha's workload are both refused on this path</td><td><span class="pill p-good">permission denied</span> in the vault audit log</td></tr>
           </tbody>

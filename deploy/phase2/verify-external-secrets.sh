@@ -45,7 +45,7 @@ d = {k: base64.b64decode(v).decode() for k, v in json.load(sys.stdin)["data"].it
 t = sec("vault", "courier-phase0-testers")
 # The revocation endpoint authenticates the client: 200 = Authentik accepts
 # the synced client_id/secret. (A client_credentials token request would not.)
-auth = base64.b64encode(f"{d['client_id']}:{d['client_secret']}".encode()).decode()
+auth = base64.b64encode((d["client_id"] + ":" + d["client_secret"]).encode()).decode()
 req = urllib.request.Request(d["token_endpoint"].replace("/token/", "/revoke/"),
     data=urllib.parse.urlencode({"token": "courier-probe-not-a-real-token"}).encode(),
     headers={"Authorization": "Basic " + auth})

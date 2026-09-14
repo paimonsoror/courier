@@ -40,6 +40,15 @@ func TestDiffers(t *testing.T) {
 		t.Fatal("identical settings in a different order or numeric type must not count as drift")
 	}
 
+	// Authentik 2026.8 returns redirect_uri_type on every entry; the body
+	// EnsureClient sends must match that shape or every resync rewrites it.
+	live := map[string]any{keyRedirectURIs: []any{
+		map[string]any{keyMatchingMode: strict, keyURL: redirectA, "redirect_uri_type": "authorization"},
+	}}
+	if differs(map[string]any{keyRedirectURIs: redirectEntries([]string{redirectA})}, live) {
+		t.Fatal("redirect entries must match the shape Authentik returns")
+	}
+
 	for name, want := range map[string]map[string]any{
 		"grant removed":   {keyGrantTypes: []string{grantAuthCode}},
 		"redirect edited": {keyRedirectURIs: []map[string]string{{keyMatchingMode: strict, keyURL: "https://c.example/cb"}}},

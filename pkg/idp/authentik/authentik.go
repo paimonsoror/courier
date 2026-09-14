@@ -187,10 +187,7 @@ func (p *Provider) EnsureClient(
 		return courier.ClientRef{}, err
 	}
 
-	redirects := make([]map[string]string, 0, len(spec.RedirectURIs))
-	for _, u := range spec.RedirectURIs {
-		redirects = append(redirects, map[string]string{"matching_mode": "strict", "url": u})
-	}
+	redirects := redirectEntries(spec.RedirectURIs)
 	body := map[string]any{
 		"name":                       providerName(spec.Name),
 		"authorization_flow":         authzFlow,
@@ -259,6 +256,19 @@ func (p *Provider) EnsureClient(
 }
 
 func ownershipMarker(owner string) string { return managedMarker + "; owner: " + owner }
+
+// redirectEntries renders redirect URIs in the exact shape Authentik returns.
+// Authentik fills in redirect_uri_type when it is omitted, so leaving it out
+// would look like drift and rewrite the provider on every resync.
+func redirectEntries(uris []string) []map[string]string {
+	entries := make([]map[string]string, 0, len(uris))
+	for _, u := range uris {
+		entries = append(entries, map[string]string{
+			"matching_mode": "strict", "url": u, "redirect_uri_type": "authorization",
+		})
+	}
+	return entries
+}
 
 // Adopt marks an existing, hand-built application as managed by Courier and
 // owned by spec.OwnerGroup. The broker then issues a new secret.
