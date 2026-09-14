@@ -1,0 +1,17 @@
+apiVersion: courier.sororlab.dev/v1alpha1
+kind: OAuthClient
+metadata:
+  name: paimon-test-client
+  namespace: team-alpha
+  labels:
+    courier.sororlab.dev/client: paimon-test-client
+spec:
+  displayName: "Testing Client"
+  clientType: confidential
+  grantTypes:
+    - authorization_code
+    - refresh_token
+  redirectUris:
+    - https://orders.sororlab.dev/oauth/callback
+  scopes:
+    - openid

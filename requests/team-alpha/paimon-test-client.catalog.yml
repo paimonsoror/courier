@@ -1,0 +1,20 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: team-alpha-paimon-test-client
+  title: "Testing Client"
+  description: OAuth client delivered by Courier.
+  annotations:
+    backstage.io/kubernetes-namespace: team-alpha
+    backstage.io/kubernetes-label-selector: courier.sororlab.dev/client=paimon-test-client
+    courier.sororlab.dev/secret-path: kv/teams/team-alpha/oauth-clients/team-alpha-paimon-test-client
+  tags:
+    - oauth-client
+    - courier
+  links:
+    - url: https://paimonsoror.github.io/courier/site/use-credentials.html
+      title: Use your credentials
+      icon: docs
+spec:
+  type: oauth-client
+  owner: group:default/team-alpha
