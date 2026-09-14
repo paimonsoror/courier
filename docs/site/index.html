@@ -187,8 +187,15 @@
             <tr><td>High-risk grants issued casually</td><td>Grants such as <code>client_credentials</code> need an explicit approval label</td><td>Label and approver recorded on the PR</td></tr>
             <tr><td>Orphaned clients with live secrets</td><td>Every client has an owning team; removing the request deletes client and secret</td><td>Request inventory in Git; controller status per client</td></tr>
             <tr><td>Automation itself becomes a liability</td><td>Least privilege: write-only vault access, IdP role limited to OAuth clients</td><td>Vault policy and IdP role definitions in the repository</td></tr>
+            <tr><td>A secret stays valid for years, or after a suspected leak</td><td>Rotation by pull request, or automatically after a maximum age; the IdP rejects the old secret as soon as the new one is stored</td><td><code>rotationHandled</code> and <code>lastSecretIssued</code> in the request's status; version history in the vault</td></tr>
+            <tr><td>Clients built by hand before Courier, secrets already emailed</td><td>Adoption: Courier takes over the existing client, keeps its client ID and replaces the secret; needs an identity-team approval label</td><td>Label on the PR; application marked as managed by Courier in the IdP</td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="callout warn">
+        <span class="label">What we learned about proving a secret works</span>
+        <p>In Authentik, a <code>client_credentials</code> request that also carries a service account's username and app password gets a token <strong>whatever client secret is sent</strong>, including none. In that mode the app password is the real credential and the client secret is decoration. We found this during Phase 4, when an old, rotated secret still "worked".</p>
+        <p>Two consequences. For identity teams: treat service-account app passwords as the credential to govern, and do not read "a token was issued" as evidence a client secret is valid. For Courier: every check now proves the secret at the token revocation endpoint, which always authenticates the client, and also shows that a wrong secret is refused.</p>
       </div>
     </section>
 
@@ -219,7 +226,7 @@
         <div class="phase done"><span class="label">Phase 2</span><div><h3>Pull request workflow</h3><p>Requests live in Git with policy checks, code-owner approval and automatic sync after merge.</p></div></div>
         <div class="phase done"><span class="label">Phase 2b</span><div><h3>Consumption made easy</h3><p>A Python sample and a per-team External Secrets store, both proven to serve only the owning team; the controller ships from a registry, pinned by digest.</p></div></div>
         <div class="phase done"><span class="label">Phase 3</span><div><h3>Self-service portal</h3><p>A Backstage form opens the pull request; each client appears on its team's page with live delivery status.</p></div></div>
-        <div class="phase"><span class="label">Phase 4</span><div><h3>Lifecycle</h3><p>Scheduled rotation, drift repair, adopting existing clients, audit dashboards.</p></div></div>
+        <div class="phase done"><span class="label">Phase 4</span><div><h3>Lifecycle</h3><p>Secret rotation by pull request or on a schedule, adoption of hand-built clients, and drift repair that writes to the IdP only when something really changed. Audit dashboards remain open.</p></div></div>
         <div class="phase"><span class="label">Phase 5</span><div><h3>Portability</h3><p>Okta adapter and key-based client authentication (<code>private_key_jwt</code>).</p></div></div>
       </div>
     </section>

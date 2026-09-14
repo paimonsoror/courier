@@ -44,7 +44,7 @@ full design and [docs/adr](docs/adr) for decisions.
 | 2 | Pull request flow: `requests/`, `courier validate` check, CODEOWNERS, ArgoCD ApplicationSet; docs site | done ([docs/site](docs/site/index.html)) |
 | 2b | Per-team SecretStore + External Secrets, Python consumer sample, controller image on GHCR pinned by digest | done ([use credentials](docs/site/use-credentials.html)) |
 | 3 | Backstage Scaffolder template + status on Group pages | done ([backstage/](backstage), [walkthrough PR #2](docs/site/walkthrough.html#pr2)) |
-| 4 | Rotation, drift detection, adopt mode, audit → Loki | not started |
+| 4 | Rotation (annotation or `rotation.maxAgeDays`), write-only-on-difference drift repair, adopt mode | done ([deploy/phase4](deploy/phase4), [walkthrough PRs #3–#4](docs/site/walkthrough.html#lifecycle)); audit → Loki open |
 | 5 | Okta adapter, `private_key_jwt`, adapter conformance suite | not started |
 
 ## Repository layout

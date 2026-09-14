@@ -39,6 +39,7 @@
       <li><a href="#access">7. Access verified</a></li>
       <li><a href="#absent">What never happened</a></li>
       <li><a href="#pr2">A second request, from Backstage</a></li>
+      <li><a href="#lifecycle">Rotation and adoption</a></li>
       <li><a href="#learned">What we learned</a></li>
       <li><a href="#reproduce">Reproduce it</a></li>
     </ol>
@@ -303,6 +304,107 @@ ACCESS CHECK PASSED</code></pre>
         <span class="label">Who is the author?</span>
         <p>GitHub shows the pull request as authored by the account behind Backstage's GitHub token, for every requester. The actual requester is recorded in the description (<em>Requested by</em>). A GitHub App or per-user GitHub sign-in in Backstage would make GitHub attribute it directly.</p>
       </div>
+      <p>Re-run on 14 September with the corrected secret check (see the <a href="#access">correction</a> in step 7), which now applies to sign-in clients too:</p>
+<pre><code>$ deploy/phase2/check-access.sh team-alpha orders-portal
+request team-alpha/orders-portal is Ready; credentials at kv/teams/team-alpha/oauth-clients/team-alpha-orders-portal
+<span class="k">PASS</span>  team-alpha (owner) reads the credentials
+<span class="k">PASS</span>  Authentik accepts the delivered secret
+<span class="k">PASS</span>  Authentik rejects a wrong secret (so the check above can fail)
+<span class="k">PASS</span>  team-bravo is denied
+
+ACCESS CHECK PASSED</code></pre>
+    </section>
+
+    <section id="lifecycle">
+      <h2>Rotation and adoption (pull requests #3 and #4)</h2>
+      <p>Phase 4 added two lifecycle operations, both requested the same way as everything else: a small change in a pull request. The Phase 4 controller was rolled out at <code>01:31:38</code> UTC on 14 September; both pull requests were merged after it.</p>
+
+      <h3>Pull request #3: rotate team-bravo's secret</h3>
+      <p>The only change is one annotation on <code>requests/team-bravo/report-exporter.yaml</code>. Any new value asks for exactly one rotation.</p>
+<pre><code><span class="k">metadata</span>:
+  <span class="k">name</span>: report-exporter
+  <span class="k">annotations</span>:
+    <span class="k">courier.sororlab.dev/rotate</span>: "2026-09-14-phase4-demo"</code></pre>
+      <figure class="shot">
+        <img src="assets/screenshots/pr3-rotation-check-approved.jpg" alt="GitHub Actions run for pull request #3: Validate requests succeeded in 20 seconds; summary table shows team-bravo report-exporter, confidential, client_credentials, credentials path kv/teams/team-bravo/oauth-clients/team-bravo-report-exporter, approved with security-approved" loading="lazy">
+        <figcaption><b>The policy check on pull request #3.</b> A rotation still touches a <code>client_credentials</code> request, so the security label is still required.</figcaption>
+      </figure>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Platform</th><th>What changed</th></tr></thead>
+          <tbody>
+            <tr><td>Kubernetes</td><td><code>lastSecretIssued: 2026-09-14T01:38:54Z</code>, <code>rotationHandled: 2026-09-14-phase4-demo</code>; client ID unchanged</td></tr>
+            <tr><td>Vault</td><td>New version 8 of the entry, <code>state: active</code>; secret fingerprint <code>9b96329eec4b</code> (was <code>2f2a72d01e19</code>)</td></tr>
+            <tr><td>Authentik</td><td>The provider's stored secret now has the same fingerprint as the vault; one <code>model_updated</code> event, at <code>01:38:53</code></td></tr>
+            <tr><td>team-bravo's namespace</td><td>The External Secrets copy kept the old secret until its next refresh, then picked up the new one</td></tr>
+          </tbody>
+        </table>
+      </div>
+<pre><code>$ deploy/phase4/verify-rotation.sh
+==> request status
+lastSecretIssued: 2026-09-14T01:38:54Z
+rotationHandled:  2026-09-14-phase4-demo
+==> before External Secrets refresh
+      vault version 8, state active, secret fingerprint 9b96329eec4b
+      kubernetes Secret fingerprint 2f2a72d01e19 (client_id unchanged)
+<span class="k">PASS</span>  vault holds a new secret; the synced copy still holds the previous one
+<span class="k">PASS</span>  client ID is unchanged by rotation
+<span class="k">PASS</span>  Authentik rejects the previous secret
+<span class="k">PASS</span>  Authentik accepts the new secret
+==> force External Secrets to refresh
+      vault version 8, state active, secret fingerprint 9b96329eec4b
+      kubernetes Secret fingerprint 9b96329eec4b (client_id unchanged)
+<span class="k">PASS</span>  External Secrets now holds the new secret
+<span class="k">PASS</span>  Authentik accepts the synced copy
+
+ROTATION VERIFIED</code></pre>
+      <p>The window between "vault has the new secret" and "every copy has it" is the refresh interval of whatever caches it. Workloads that read the vault directly see the new secret on their next read; External Secrets copies wait for their refresh (one hour here) unless forced.</p>
+
+      <h3>Pull request #4: adopt a hand-built client</h3>
+      <p>Before the pull request, <code>deploy/phase4/create-legacy-client.sh</code> built <code>legacy-crm</code> by hand in Authentik, the way clients were made before Courier, and kept its "emailed" secret aside so we could prove it stops working. Team-alpha then requested <code>crm</code> with one extra annotation:</p>
+<pre><code><span class="k">metadata</span>:
+  <span class="k">name</span>: crm
+  <span class="k">annotations</span>:
+    <span class="k">courier.sororlab.dev/adopt</span>: legacy-crm</code></pre>
+      <figure class="shot">
+        <img src="assets/screenshots/pr4-adoption-labels.jpg" alt="GitHub pull request #4, request: team-alpha adopts hand-built legacy-crm client, with labels identity-approved and security-approved" loading="lazy">
+        <figcaption><b>Pull request #4 carries two approvals:</b> <code>security-approved</code> for the grant and <code>identity-approved</code> for taking over an existing client.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/pr4-adoption-check-approved.jpg" alt="GitHub Actions run for pull request #4: Validate requests succeeded in 16 seconds; summary table shows team-alpha crm, confidential, client_credentials, credentials path kv/teams/team-alpha/oauth-clients/legacy-crm, approved with security-approved and identity-approved" loading="lazy">
+        <figcaption><b>The check passed once both labels were present.</b> The credentials path uses the adopted name, <code>legacy-crm</code>.</figcaption>
+      </figure>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Platform</th><th>What changed</th></tr></thead>
+          <tbody>
+            <tr><td>Kubernetes</td><td><code>crm</code> Ready, client ID <code>Fx2FjQztQf1w…</code>, the same one the hand-built client always had</td></tr>
+            <tr><td>Authentik</td><td>Application <code>legacy-crm</code> now described <code>managed-by: courier; owner: team-alpha</code> and renamed <em>team-alpha: CRM integration (adopted)</em>; new secret set</td></tr>
+            <tr><td>Vault</td><td>New entry <code>kv/teams/team-alpha/oauth-clients/legacy-crm</code>, readable by team-alpha only</td></tr>
+          </tbody>
+        </table>
+      </div>
+<pre><code>$ deploy/phase4/verify-adoption.sh
+NAME   READY   TYPE           CLIENT ID                                  SECRET PATH
+crm    True    confidential   Fx2FjQztQf1w2bxpAk9MrDawX2XlGlMVaal9JaEU   kv/teams/team-alpha/oauth-clients/legacy-crm
+==> Authentik application
+      name: team-alpha: CRM integration (adopted) | meta_description: managed-by: courier; owner: team-alpha
+<span class="k">PASS</span>  team-alpha reads the adopted client's credentials
+<span class="k">PASS</span>  client ID is unchanged by adoption
+<span class="k">PASS</span>  Authentik rejects the emailed secret
+<span class="k">PASS</span>  Authentik accepts the secret Courier stored in vault
+<span class="k">PASS</span>  team-bravo is denied
+
+ADOPTION VERIFIED</code></pre>
+      <p>Integrations that use the client keep their client ID and redirect settings; they only need to read the new secret from the vault. The copy that was emailed is now worthless.</p>
+
+      <div class="callout warn">
+        <span class="label">The first run of both checks failed, correctly</span>
+        <p>Our first versions asked Authentik for a token with the old secret and expected a refusal. Both got HTTP 200. The secrets had rotated (Authentik's stored secret matched the vault), but Authentik's <code>client_credentials</code> grant with a service account's username and app password does not check <code>client_secret</code> at all: the old, a made-up and a missing secret were all accepted. The checks were rewritten to use the revocation endpoint, which always authenticates the client, and re-run with the results above.</p>
+      </div>
+
+      <h3>Drift repair that stays quiet</h3>
+      <p>Before Phase 4, every ten-minute resync rewrote every client in Authentik: 12 <code>model_updated</code> events an hour for report-exporter alone. Phase 4 compares first and writes only on a difference. In the first 16 minutes after rollout, billing-sync had no events and report-exporter had one, the rotation. orders-portal still had one every resync, because Authentik adds <code>redirect_uri_type</code> to redirect URIs and the controller did not send it; that was fixed in <code>8e454ad</code>.</p>
     </section>
 
     <section id="learned">
@@ -312,6 +414,7 @@ ACCESS CHECK PASSED</code></pre>
         <li><strong>Branch protection is a required setup step, not optional.</strong> Without it, the check still reports but merges do not wait for code-owner review.</li>
         <li><strong>Sync latency is ArgoCD's polling interval.</strong> Delivery itself took seconds; add an ArgoCD webhook if teams expect credentials immediately after merge.</li>
         <li><strong>Verification must include the negative case.</strong> "The owner can read it" alone would also pass if every team could read everything.</li>
+        <li><strong>A check that cannot fail proves nothing.</strong> "The credentials get a token" also passed with a rotated-out secret and with a made-up one. Every secret check now also sends a wrong secret and requires a refusal.</li>
       </ul>
     </section>
 

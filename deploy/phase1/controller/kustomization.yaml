@@ -8,10 +8,10 @@ resources:
 
 images:
   # Built by .github/workflows/controller-image.yml; pinned by digest.
-  # sha-faf6004 = commit faf6004 (Phase 4: rotation, adoption, quiet drift repair).
+  # sha-8e454ad = commit 8e454ad (Phase 4 + redirect_uri_type drift fix).
   - name: controller
     newName: ghcr.io/paimonsoror/courier-controller
-    digest: sha256:27abaafb25cdb4bb7315ac85ae41b2278a6106a466a0d1f3a06d6807793a3861
+    digest: sha256:34023d6eeb14ba1efe231bb6f2b8442665a810e3a2de04680e8aba2485a3fc44
 
 patches:
   - path: manager-wiring.yaml

@@ -139,7 +139,17 @@
           <p>Deleting the file prunes the object. The controller deletes the IdP client <em>first</em>, so the credentials stop working, and then destroys every stored version of the secret. The object disappears only after both succeed.</p>
         </div>
       </div>
-      <p>Every few minutes the controller also re-applies each ready request, which restores settings someone changed by hand in the IdP console.</p>
+      <div class="two">
+        <div class="panel">
+          <h3>Rotating a secret</h3>
+          <p>A team sets the annotation <code>courier.sororlab.dev/rotate</code> to any new value, or sets <code>rotation.maxAgeDays</code> so it happens on its own. The controller follows the same pending, IdP, active order as a first delivery, so the new secret is stored before the IdP accepts it. The IdP rejects the old secret straight away; workloads that cache it must re-read the vault. Each annotation value rotates once, recorded as <code>rotationHandled</code>.</p>
+        </div>
+        <div class="panel">
+          <h3>Adopting an existing client</h3>
+          <p>A request with <code>courier.sororlab.dev/adopt: &lt;application&gt;</code> takes over a client that was built by hand. It needs the <code>identity-approved</code> label. The controller marks the application as managed and owned by the team, keeps the client ID, and issues a new secret, so any copy that was emailed or pasted stops working.</p>
+        </div>
+      </div>
+      <p>Every ten minutes the controller also re-applies each ready request. It compares the requested settings with the live IdP object and writes only when they differ, so a setting changed by hand in the IdP console is restored, and an unchanged client produces no IdP events and no new vault versions.</p>
     </section>
 
     <section id="trust">

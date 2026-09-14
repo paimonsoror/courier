@@ -335,6 +335,9 @@ unset GH_TOKEN</code></pre>
             <tr><td>External Secrets per team</td><td><code>deploy/phase2/verify-external-secrets.sh</code></td><td><code>EXTERNAL SECRETS VERIFIED</code></td></tr>
             <tr><td>Backstage can read client status</td><td><code>kubectl auth can-i list oauthclients.courier.sororlab.dev --as=system:serviceaccount:backstage:backstage -A</code></td><td><code>yes</code></td></tr>
             <tr><td>Self-service works end to end</td><td>Submit the Backstage form, merge the pull request, then <code>deploy/phase2/check-access.sh &lt;team&gt; &lt;name&gt;</code></td><td>Client on the team's Backstage page; <code>ACCESS CHECK PASSED</code></td></tr>
+            <tr><td>Rotation replaces the secret everywhere</td><td><code>deploy/phase4/verify-rotation.sh</code></td><td><code>ROTATION VERIFIED</code>: same client ID, old secret rejected, new secret accepted, External Secrets copy refreshed</td></tr>
+            <tr><td>Adoption takes over a hand-built client</td><td><code>deploy/phase4/create-legacy-client.sh</code> before the PR, <code>deploy/phase4/verify-adoption.sh</code> after</td><td><code>ADOPTION VERIFIED</code>: client ID kept, emailed secret rejected, other teams denied</td></tr>
+            <tr><td>Resync does not rewrite unchanged clients</td><td>Authentik events for the client over 30 minutes</td><td>No <code>model_updated</code> events unless the request changed</td></tr>
             <tr><td>Controller runs the pinned image</td><td><code>kubectl -n courier-system get pod -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'</code></td><td>The digest in the overlay</td></tr>
           </tbody>
         </table>
@@ -352,7 +355,7 @@ unset GH_TOKEN</code></pre>
           <thead><tr><th>Task</th><th>How</th></tr></thead>
           <tbody>
             <tr><td>Why is a request not ready?</td><td><code>kubectl -n &lt;team&gt; describe oauthclient &lt;name&gt;</code> for the condition reason; <code>kubectl -n courier-system logs deploy/courier-controller-manager</code> for detail</td></tr>
-            <tr><td>Force a new secret</td><td>Remove the request and add it back in a second pull request. A rotate annotation is planned.</td></tr>
+            <tr><td>Force a new secret</td>Set <code>courier.sororlab.dev/rotate</code> to a new value (a date or ticket number) by pull request. For a regular schedule, set <code>rotation.maxAgeDays</code>. Workloads must re-read the vault; External Secrets picks the change up at its next refresh.</td></tr>
             <tr><td>Upgrade the controller</td><td>Update the image digest in the overlay by pull request (<a href="#image">section 7</a>); ArgoCD rolls it out</td></tr>
             <tr><td>Who read a secret?</td><td>Vault audit log at <code>/vault/audit/audit.log</code>; ship it to your log platform</td></tr>
             <tr><td>Rotate the controller's IdP token</td><td>Delete token <code>courier-controller-api</code> in Authentik and re-run <code>authentik-controller-account.sh</code>, then restart the controller</td></tr>
@@ -375,7 +378,9 @@ unset GH_TOKEN</code></pre>
             <tr><td>Vault log warning <code>no key-id in common with currently healthy seals</code> on first unseal</td><td>Normal once, right after initialization</td><td>None</td></tr>
             <tr><td>Image build fails with <code>gpg: decryption failed: No secret key</code></td><td>Docker's credential store cannot unlock in a non-interactive session, even for public images</td><td>Build with an empty <code>DOCKER_CONFIG=$(mktemp -d)</code></td></tr>
             <tr><td>A setup script re-run tries to recreate an existing Authentik application</td><td>The applications list endpoint ignores <code>?slug=</code></td><td>Look applications up with <code>core/applications/&lt;slug&gt;/</code></td></tr>
-            <tr><td>Request <code>Ready=False</code>, reason <code>NameConflict</code></td><td>An application with slug <code>&lt;team&gt;-&lt;name&gt;</code> exists and was not created by Courier</td><td>Rename the request, or retire the old application</td></tr>
+            <tr><td>Request <code>Ready=False</code>, reason <code>NameConflict</code></td><td>An application with slug <code>&lt;team&gt;-&lt;name&gt;</code> exists and was not created by Courier</td><td>Rename the request, retire the old application, or take it over with the <code>courier.sororlab.dev/adopt</code> annotation and the <code>identity-approved</code> label</td></tr>
+            <tr><td>An old or made-up client secret still gets a token</td><td>Authentik's <code>client_credentials</code> grant with a service account's username and app password ignores <code>client_secret</code></td><td>Do not use token issuance to test a secret. Call the revocation endpoint with HTTP Basic <code>client_id:client_secret</code>: 200 accepted, 401 rejected. Govern app passwords as the real credential.</td></tr>
+            <tr><td>Authentik logs a provider update every ten minutes for clients with redirect URIs</td><td>Controllers before <code>8e454ad</code> left out <code>redirect_uri_type</code>, which Authentik fills in, so every resync saw a difference</td><td>Run the controller image at or after <code>sha-8e454ad</code></td></tr>
             <tr><td>Vault hostname resolves on some machines only</td><td>Record created in the wrong zone, or the secondary DNS server has not synced</td><td>Point the record at the ingress name in the current domain; check zone transfer to secondaries</td></tr>
             <tr><td>Vault entry version number climbs every few minutes</td><td>Controllers before <code>2ed3a9d</code> rewrote metadata on every resync</td><td>Run the pinned image at or after <code>sha-2ed3a9d</code>; metadata is now written only when the request changes</td></tr>
             <tr><td>Team <code>SecretStore</code> not Ready</td><td>No Kubernetes auth role for the team</td><td>Run <code>deploy/phase2/vault-team-roles.sh</code></td></tr>

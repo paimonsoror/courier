@@ -30,6 +30,7 @@
     <p>On this page</p>
     <ol>
       <li><a href="#oauthclient">OAuthClient spec</a></li>
+      <li><a href="#annotations">Annotations</a></li>
       <li><a href="#status">Status</a></li>
       <li><a href="#conditions">Condition reasons</a></li>
       <li><a href="#naming">Naming rules</a></li>
@@ -71,9 +72,24 @@
             <tr><td><code>allowGroups</code></td><td>list</td><td>no</td><td>IdP groups allowed to sign in through the client. Defaults to the owner group.</td></tr>
             <tr><td><code>ownerGroup</code></td><td>string</td><td>no</td><td>Must equal the namespace; empty means the namespace.</td></tr>
             <tr><td><code>displayName</code></td><td>string</td><td>no</td><td>Shown in the IdP. Defaults to <code>&lt;namespace&gt;/&lt;name&gt;</code>.</td></tr>
+            <tr><td><code>rotation.maxAgeDays</code></td><td>integer</td><td>no</td><td>Confidential clients only. The controller issues a new secret once the current one is this many days old, measured from <code>lastSecretIssued</code>.</td></tr>
           </tbody>
         </table>
       </div>
+    </section>
+
+    <section id="annotations">
+      <h2>Annotations</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Annotation</th><th>Value</th><th>Effect</th><th>Approval</th></tr></thead>
+          <tbody>
+            <tr><td><code>courier.sororlab.dev/rotate</code></td><td>Any string, for example a date or ticket number</td><td>Issues a new secret once per distinct value; the value is copied to <code>status.rotationHandled</code>. Confidential clients only.</td><td>None beyond the usual review</td></tr>
+            <tr><td><code>courier.sororlab.dev/adopt</code></td><td>Slug of an existing IdP application</td><td>Takes over that application instead of creating <code>&lt;team&gt;-&lt;name&gt;</code>: marks it managed and owned by the team, keeps the client ID, issues a new secret. The vault path uses the adopted name.</td><td><code>identity-approved</code> label (policy <code>annotationApprovals</code>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>An application already owned by another team is never adopted; the request stays <code>NameConflict</code>.</p>
     </section>
 
     <section id="status">
@@ -86,7 +102,8 @@
             <tr><td><code>clientId</code></td><td>Client ID in the IdP (not sensitive)</td></tr>
             <tr><td><code>secretPath</code></td><td>Vault path where the owning team reads the credentials</td></tr>
             <tr><td><code>credentialsDelivered</code></td><td>Credentials were stored and promoted to <code>active</code>. If lost, the controller issues a new secret.</td></tr>
-            <tr><td><code>lastSecretIssued</code></td><td>When Courier last generated a secret for this client</td></tr>
+            <tr><td><code>lastSecretIssued</code></td><td>When Courier last generated a secret for this client; the clock for <code>rotation.maxAgeDays</code></td></tr>
+            <tr><td><code>rotationHandled</code></td><td>The last <code>rotate</code> annotation value acted on. A different value triggers one more rotation.</td></tr>
             <tr><td><code>identityProvider</code></td><td>Adapter instance managing the client</td></tr>
             <tr><td><code>observedGeneration</code></td><td>Spec generation last reconciled</td></tr>
           </tbody>
@@ -103,7 +120,7 @@
           <tbody>
             <tr><td><code>Delivered</code></td><td><span class="pill p-good">True</span></td><td>Client exists; credentials are active at <code>secretPath</code></td><td>Re-applied every resync period</td></tr>
             <tr><td><code>InvalidSpec</code></td><td><span class="pill p-bad">False</span></td><td>The request breaks a rule; nothing was created</td><td>No; waits for a spec change</td></tr>
-            <tr><td><code>NameConflict</code></td><td><span class="pill p-bad">False</span></td><td>An IdP application with this name exists and is not managed by Courier</td><td>No</td></tr>
+            <tr><td><code>NameConflict</code></td><td><span class="pill p-bad">False</span></td><td>An IdP application with this name exists and is not managed by Courier, or is owned by another team. Add the <code>adopt</code> annotation to take it over.</td><td>No</td></tr>
             <tr><td><code>ReconcileFailed</code></td><td><span class="pill p-bad">False</span></td><td>IdP or vault call failed; the message has details</td><td>Yes, with back-off</td></tr>
             <tr><td><code>DeleteFailed</code></td><td><span class="pill p-bad">False</span></td><td>Cleanup failed during deletion; the object stays until it succeeds</td><td>Yes, with back-off</td></tr>
           </tbody>
@@ -137,7 +154,9 @@
   - localhost
   - 127.0.0.1
 <span class="k">grantApprovals</span>:                       <span class="c"># grant → label required on the PR (changed requests only)</span>
-  <span class="k">client_credentials</span>: security-approved</code></pre>
+  <span class="k">client_credentials</span>: security-approved
+<span class="k">annotationApprovals</span>:                  <span class="c"># annotation → label required on the PR</span>
+  <span class="k">courier.sororlab.dev/adopt</span>: identity-approved</code></pre>
       <p>Unknown keys are rejected.</p>
     </section>
 
