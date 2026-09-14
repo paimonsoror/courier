@@ -28,6 +28,11 @@ type Provider interface {
 	// secret; when zero, an existing secret is left unchanged.
 	EnsureClient(ctx context.Context, spec courier.ClientSpec, secret courier.Secret) (courier.ClientRef, error)
 
+	// Adopt marks an existing client that Courier did not create as managed and
+	// owned by spec.OwnerGroup, so Courier takes over its lifecycle. Callers must
+	// then issue a new secret: a secret Courier did not issue is never trusted.
+	Adopt(ctx context.Context, spec courier.ClientSpec) (courier.ClientRef, error)
+
 	// DeleteClient removes the client and its IdP-side objects. Deleting a
 	// client that no longer exists is not an error.
 	DeleteClient(ctx context.Context, ref courier.ClientRef) error

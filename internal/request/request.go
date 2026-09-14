@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -36,6 +37,13 @@ const (
 	catalogSuffix = ".catalog.yml"
 	// ClientLabel ties an OAuthClient to its Backstage entity's label selector.
 	ClientLabel = "courier.sororlab.dev/client"
+	// RotateAnnotation requests a new client secret. Courier rotates once per
+	// distinct value, so set it to something new each time (for example a date).
+	RotateAnnotation = "courier.sororlab.dev/rotate"
+	// AdoptAnnotation takes over an existing IdP client that Courier did not
+	// create. Its value is the existing application slug, which becomes the
+	// client's IdP-side name.
+	AdoptAnnotation = "courier.sororlab.dev/adopt"
 )
 
 // ToClientSpec maps a request onto the core spec. The IdP-side name is
@@ -49,8 +57,12 @@ func ToClientSpec(oc *courierv1alpha1.OAuthClient) courier.ClientSpec {
 	if display == "" {
 		display = oc.Namespace + "/" + oc.Name
 	}
+	name := oc.Namespace + "-" + oc.Name
+	if slug := oc.Annotations[AdoptAnnotation]; slug != "" {
+		name = slug
+	}
 	return courier.ClientSpec{
-		Name:         oc.Namespace + "-" + oc.Name,
+		Name:         name,
 		DisplayName:  display,
 		OwnerGroup:   owner,
 		Type:         courier.ClientType(oc.Spec.ClientType),
@@ -68,6 +80,9 @@ func CheckClient(oc *courierv1alpha1.OAuthClient) error {
 	if spec.OwnerGroup != oc.Namespace {
 		return fmt.Errorf("ownerGroup %q must match the namespace %q", spec.OwnerGroup, oc.Namespace)
 	}
+	if oc.Spec.Rotation != nil && spec.Type != courier.ClientTypeConfidential {
+		return errors.New("rotation applies to confidential clients only")
+	}
 	return spec.Normalize().Validate()
 }
 
@@ -79,6 +94,8 @@ type Policy struct {
 	AllowedRedirectHosts []string `json:"allowedRedirectHosts,omitempty"`
 	// GrantApprovals maps a grant type to the pull request label that must be present.
 	GrantApprovals map[string]string `json:"grantApprovals,omitempty"`
+	// AnnotationApprovals maps an annotation (present with any value) to a required label.
+	AnnotationApprovals map[string]string `json:"annotationApprovals,omitempty"`
 }
 
 // LoadPolicy reads a policy file. An empty path returns the zero policy.
@@ -297,7 +314,7 @@ func Check(reqs []Request, o Options) []Finding {
 		}
 		if o.EnforceApprovals && slices.Contains(o.Changed, r.File) {
 			for _, label := range missingApprovals(oc, o) {
-				add(r.File, "needs the %q label on the pull request (grant requires approval)", label)
+				add(r.File, "needs the %q label on the pull request (%s)", label, approvalReason(oc, o.Policy, label))
 			}
 		}
 	}
@@ -311,7 +328,27 @@ func requiredApprovals(oc *courierv1alpha1.OAuthClient, p Policy) []string {
 			labels = append(labels, label)
 		}
 	}
+	keys := slices.Sorted(maps.Keys(p.AnnotationApprovals))
+	for _, key := range keys {
+		if label := p.AnnotationApprovals[key]; oc.Annotations[key] != "" && label != "" && !slices.Contains(labels, label) {
+			labels = append(labels, label)
+		}
+	}
 	return labels
+}
+
+func approvalReason(oc *courierv1alpha1.OAuthClient, p Policy, label string) string {
+	for _, g := range oc.Spec.GrantTypes {
+		if p.GrantApprovals[g] == label {
+			return "grant requires approval"
+		}
+	}
+	for key, l := range p.AnnotationApprovals {
+		if l == label && oc.Annotations[key] != "" {
+			return "annotation " + key + " requires approval"
+		}
+	}
+	return "required by policy"
 }
 
 func missingApprovals(oc *courierv1alpha1.OAuthClient, o Options) []string {

@@ -59,6 +59,19 @@ type OAuthClientSpec struct {
 	// +optional
 	// +listType=set
 	AllowGroups []string `json:"allowGroups,omitempty"`
+
+	// rotation configures automatic secret rotation (confidential clients only).
+	// On-demand rotation uses the courier.sororlab.dev/rotate annotation.
+	// +optional
+	Rotation *RotationSpec `json:"rotation,omitempty"`
+}
+
+// RotationSpec configures automatic secret rotation.
+type RotationSpec struct {
+	// maxAgeDays issues a new client secret once the current one is older than this.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxAgeDays int `json:"maxAgeDays,omitempty"`
 }
 
 // OAuthClientStatus reports what Courier delivered. It never contains the secret.
@@ -86,6 +99,11 @@ type OAuthClientStatus struct {
 	// lastSecretIssued is when Courier last generated a client secret.
 	// +optional
 	LastSecretIssued *metav1.Time `json:"lastSecretIssued,omitempty"`
+
+	// rotationHandled is the value of the courier.sororlab.dev/rotate annotation
+	// that was last acted on. Changing the annotation to a new value rotates again.
+	// +optional
+	RotationHandled string `json:"rotationHandled,omitempty"`
 
 	// conditions: Ready is True when the client exists and credentials are available.
 	// +listType=map

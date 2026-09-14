@@ -35,6 +35,7 @@ import (
 	courierv1alpha1 "github.com/paimonsoror/courier/api/v1alpha1"
 	"github.com/paimonsoror/courier/internal/request"
 	"github.com/paimonsoror/courier/pkg/broker"
+	"github.com/paimonsoror/courier/pkg/courier"
 	"github.com/paimonsoror/courier/pkg/idp"
 )
 
@@ -98,9 +99,12 @@ func (r *OAuthClientReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
+	rotate, rotateReason := rotationDue(&oc, spec)
 	res, err := r.Broker.Ensure(ctx, spec, broker.Prior{
 		Delivered:   oc.Status.CredentialsDelivered,
 		SpecChanged: oc.Generation != oc.Status.ObservedGeneration,
+		Rotate:      rotate,
+		Adopt:       oc.Annotations[request.AdoptAnnotation] != "",
 	})
 	oc.Status.ObservedGeneration = oc.Generation
 	oc.Status.IdentityProvider = r.Broker.IDP.Name()
@@ -124,16 +128,37 @@ func (r *OAuthClientReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	oc.Status.ClientID = res.Ref.ClientID
 	oc.Status.CredentialsDelivered = true
+	oc.Status.RotationHandled = oc.Annotations[request.RotateAnnotation]
 	if res.SecretIssued {
 		now := metav1.Now()
 		oc.Status.LastSecretIssued = &now
-		log.Info("issued credentials", "client", spec.Name, "clientId", res.Ref.ClientID, "path", res.Path)
+		msg := "issued credentials"
+		if rotate {
+			msg = "rotated credentials"
+		}
+		log.Info(msg, "client", spec.Name, "clientId", res.Ref.ClientID, "path", res.Path, "reason", rotateReason)
 	}
 	r.setReady(&oc, metav1.ConditionTrue, "Delivered", fmt.Sprintf("credentials are available at %s", res.Path))
 	if err := r.Status().Update(ctx, &oc); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{RequeueAfter: r.ResyncPeriod}, nil
+}
+
+// rotationDue decides whether a delivered confidential client needs a new
+// secret: on request (a new courier.sororlab.dev/rotate value) or by age.
+func rotationDue(oc *courierv1alpha1.OAuthClient, spec courier.ClientSpec) (bool, string) {
+	if !oc.Status.CredentialsDelivered || spec.Type != courier.ClientTypeConfidential {
+		return false, ""
+	}
+	if v := oc.Annotations[request.RotateAnnotation]; v != "" && v != oc.Status.RotationHandled {
+		return true, "requested (" + v + ")"
+	}
+	if rot := oc.Spec.Rotation; rot != nil && rot.MaxAgeDays > 0 && oc.Status.LastSecretIssued != nil &&
+		time.Since(oc.Status.LastSecretIssued.Time) > time.Duration(rot.MaxAgeDays)*24*time.Hour {
+		return true, fmt.Sprintf("older than %d days", rot.MaxAgeDays)
+	}
+	return false, ""
 }
 
 func (r *OAuthClientReconciler) setReady(oc *courierv1alpha1.OAuthClient, status metav1.ConditionStatus, reason, msg string) {
@@ -149,7 +174,11 @@ func (r *OAuthClientReconciler) setReady(oc *courierv1alpha1.OAuthClient, status
 // SetupWithManager sets up the controller with the Manager.
 func (r *OAuthClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&courierv1alpha1.OAuthClient{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		// Spec changes and annotation changes (rotate, adopt) both need a reconcile;
+		// status-only updates do not.
+		For(&courierv1alpha1.OAuthClient{}, builder.WithPredicates(predicate.Or(
+			predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{},
+		))).
 		Named("oauthclient").
 		Complete(r)
 }

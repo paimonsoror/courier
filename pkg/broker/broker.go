@@ -22,6 +22,11 @@ type Prior struct {
 	// reconciled. Stored metadata is only rewritten then: every KV v2 write
 	// creates a new version, so periodic resyncs must not write.
 	SpecChanged bool
+	// Rotate issues a new secret even though credentials were delivered.
+	Rotate bool
+	// Adopt takes over an existing client that Courier did not create. It
+	// always results in a new secret.
+	Adopt bool
 }
 
 // Result describes what Ensure did.
@@ -54,13 +59,17 @@ func (b *Broker) Ensure(ctx context.Context, spec courier.ClientSpec, prior Prio
 	path := b.Store.PathFor(spec)
 
 	existing, found, err := b.IDP.Lookup(ctx, spec.Name)
+	if errors.Is(err, idp.ErrNotManaged) && prior.Adopt {
+		existing, err = b.IDP.Adopt(ctx, spec)
+		found = err == nil
+	}
 	if err != nil {
 		return Result{}, fmt.Errorf("look up client %q in %s: %w", spec.Name, b.IDP.Name(), err)
 	}
 
 	// Already delivered: converge IdP settings (repairs drift), keep the secret,
 	// and refresh stored metadata only if the request changed.
-	if found && prior.Delivered {
+	if found && prior.Delivered && !prior.Rotate {
 		ref, err := b.IDP.EnsureClient(ctx, spec, courier.Secret{})
 		if err != nil {
 			return Result{Path: path}, fmt.Errorf("update client %q in %s: %w", spec.Name, b.IDP.Name(), err)

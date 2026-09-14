@@ -194,6 +194,44 @@ func TestCatalogEntries(t *testing.T) {
 	wantFinding(t, cat, "no request team-alpha/ghost.yaml")
 }
 
+func TestAdoptAndRotationRules(t *testing.T) {
+	p := policy
+	p.AnnotationApprovals = map[string]string{AdoptAnnotation: "identity-approved"}
+	adopting := strings.Replace(oauthClient(teamAlpha, "crm", m2mGrant), "  namespace: team-alpha\n",
+		"  namespace: team-alpha\n  annotations:\n    courier.sororlab.dev/adopt: legacy-crm\n", 1)
+	publicRotating := strings.Replace(oauthClient(teamAlpha, "cli", authCode+"  redirectUris: [http://localhost:8250/cb]\n"),
+		"clientType: confidential", "clientType: public\n  rotation:\n    maxAgeDays: 30", 1)
+	root := writeTree(t, map[string]string{
+		"team-alpha/crm.yaml": adopting,
+		"team-alpha/cli.yaml": publicRotating,
+	})
+	reqs, findings, err := Load(root)
+	if err != nil || len(findings) != 0 {
+		t.Fatalf("load: %v %v", err, findings)
+	}
+	for i := range reqs {
+		if reqs[i].Client.Name == "crm" {
+			if got := ToClientSpec(&reqs[i].Client).Name; got != "legacy-crm" {
+				t.Fatalf("adopted client must keep its existing slug, got %q", got)
+			}
+		}
+	}
+
+	crm := filepath.ToSlash(filepath.Join(root, "team-alpha", "crm.yaml"))
+	f := Check(reqs, Options{Root: root, Policy: p, Changed: []string{crm}, EnforceApprovals: true,
+		Labels: []string{approval}})
+	wantFinding(t, f, `needs the "identity-approved" label on the pull request (annotation courier.sororlab.dev/adopt requires approval)`)
+	wantFinding(t, f, "rotation applies to confidential clients only")
+
+	f = Check(reqs, Options{Root: root, Policy: p, Changed: []string{crm}, EnforceApprovals: true,
+		Labels: []string{approval, "identity-approved"}})
+	for _, finding := range f {
+		if strings.Contains(finding.Message, "label") {
+			t.Fatalf("both labels present, unexpected %v", finding)
+		}
+	}
+}
+
 func TestSummary(t *testing.T) {
 	root := writeTree(t, map[string]string{newM2MFile: oauthClient(teamAlpha, newM2M, m2mGrant)})
 	reqs, _, err := Load(root)

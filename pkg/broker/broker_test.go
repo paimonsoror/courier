@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/paimonsoror/courier/pkg/courier"
+	idppkg "github.com/paimonsoror/courier/pkg/idp"
 	"github.com/paimonsoror/courier/pkg/secretstore"
 )
 
@@ -19,7 +20,18 @@ type events []string
 
 func (e *events) add(format string, args ...any) { *e = append(*e, fmt.Sprintf(format, args...)) }
 
+func (f *fakeIDP) Adopt(_ context.Context, spec courier.ClientSpec) (courier.ClientRef, error) {
+	ref, ok := f.clients[spec.Name]
+	if !ok {
+		return courier.ClientRef{}, errors.New("nothing to adopt")
+	}
+	delete(f.unmanaged, spec.Name)
+	f.log.add("idp.adopt %s", spec.Name)
+	return ref, nil
+}
+
 type fakeIDP struct {
+	unmanaged map[string]bool
 	log        *events
 	clients    map[string]courier.ClientRef
 	secrets    map[string]string
@@ -33,6 +45,9 @@ func newFakeIDP(log *events) *fakeIDP {
 func (f *fakeIDP) Name() string { return "fake-idp" }
 
 func (f *fakeIDP) Lookup(_ context.Context, name string) (courier.ClientRef, bool, error) {
+	if f.unmanaged[name] {
+		return courier.ClientRef{}, false, idppkg.ErrNotManaged
+	}
 	ref, ok := f.clients[name]
 	return ref, ok, nil
 }
@@ -238,6 +253,65 @@ func TestEnsureResyncOfUnchangedRequestWritesNothing(t *testing.T) {
 	}
 	if len(idp.clients) != 1 {
 		t.Fatal("resync should still converge the IdP client")
+	}
+}
+
+func TestEnsureRotateDeliveredClient(t *testing.T) {
+	b, fi, store, log := setup()
+	ctx := context.Background()
+	if _, err := b.Ensure(ctx, confidentialSpec(), Prior{}); err != nil {
+		t.Fatal(err)
+	}
+	b.GenerateSecret = func() (courier.Secret, error) { return courier.NewSecret("rotated-value"), nil }
+	*log = nil
+
+	res, err := b.Ensure(ctx, confidentialSpec(), Prior{Delivered: true, Rotate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"store.put " + path + " state=pending secret=true",
+		"idp.ensure payments-mcp secret=true",
+		"store.patch " + path + " state=active",
+	}
+	if !res.SecretIssued || !slices.Equal(*log, want) {
+		t.Fatalf("rotation must follow the pending-first order: got %q", *log)
+	}
+	if fi.secrets["payments-mcp"] != "rotated-value" || store.data[path]["client_secret"] != "rotated-value" {
+		t.Fatal("rotation did not replace the secret in both the IdP and the store")
+	}
+}
+
+func TestEnsureAdoptsUnmanagedClient(t *testing.T) {
+	b, fi, store, log := setup()
+	ctx := context.Background()
+	fi.clients["payments-mcp"] = courier.ClientRef{ClientID: "legacy-client-id"}
+	fi.secrets["payments-mcp"] = "secret-from-an-old-email"
+	fi.unmanaged = map[string]bool{"payments-mcp": true}
+
+	if _, err := b.Ensure(ctx, confidentialSpec(), Prior{}); !errors.Is(err, idppkg.ErrNotManaged) {
+		t.Fatalf("without adoption an unmanaged client must be refused, got %v", err)
+	}
+	if len(store.data) != 0 {
+		t.Fatal("a refused request must not write to the store")
+	}
+
+	*log = nil
+	res, err := b.Ensure(ctx, confidentialSpec(), Prior{Adopt: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if (*log)[0] != "idp.adopt payments-mcp" || !res.SecretIssued {
+		t.Fatalf("adoption must mark the client managed and issue a secret: %q", *log)
+	}
+	if res.Ref.ClientID != "legacy-client-id" {
+		t.Fatal("adoption must keep the existing client ID so consumers keep working after they pick up the new secret")
+	}
+	if fi.secrets["payments-mcp"] == "secret-from-an-old-email" {
+		t.Fatal("the old, untrusted secret must be replaced")
+	}
+	if store.data[path]["client_secret"] != fi.secrets["payments-mcp"] {
+		t.Fatal("store and IdP disagree after adoption")
 	}
 }
 

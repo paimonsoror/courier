@@ -136,6 +136,9 @@ func (p *Provider) Lookup(ctx context.Context, name string) (courier.ClientRef, 
 		return courier.ClientRef{}, false, fmt.Errorf("authentik: %w: %q", ErrNotManaged, name)
 	}
 	ref := courier.ClientRef{Objects: map[string]string{"application_slug": app.Slug, "application_pk": app.PK}}
+	if _, owner, ok := strings.Cut(app.MetaDescription, "owner: "); ok {
+		ref.Objects["owner"] = strings.TrimSpace(owner)
+	}
 	if app.Provider != nil {
 		var prov oauth2Provider
 		ok, err := p.get(ctx, fmt.Sprintf("providers/oauth2/%d/", *app.Provider), &prov)
@@ -158,6 +161,9 @@ func (p *Provider) EnsureClient(
 	existing, found, err := p.Lookup(ctx, spec.Name)
 	if err != nil {
 		return courier.ClientRef{}, err
+	}
+	if owner := existing.Objects["owner"]; found && owner != "" && owner != spec.OwnerGroup {
+		return courier.ClientRef{}, fmt.Errorf("authentik: %w: %q is owned by %s", ErrNotManaged, spec.Name, owner)
 	}
 
 	authzFlow, err := p.flowPK(ctx, p.cfg.AuthorizationFlow)
@@ -212,7 +218,7 @@ func (p *Provider) EnsureClient(
 	}
 	var prov oauth2Provider
 	if provPK != 0 {
-		err = p.send(ctx, http.MethodPatch, fmt.Sprintf("providers/oauth2/%d/", provPK), body, &prov, secret)
+		err = p.updateIfChanged(ctx, fmt.Sprintf("providers/oauth2/%d/", provPK), body, &prov, secret)
 	} else {
 		err = p.send(ctx, http.MethodPost, "providers/oauth2/", body, &prov, secret)
 	}
@@ -224,13 +230,13 @@ func (p *Provider) EnsureClient(
 		"name":               spec.DisplayName,
 		"slug":               spec.Name,
 		"provider":           prov.PK,
-		"meta_description":   managedMarker + "; owner: " + spec.OwnerGroup,
+		"meta_description":   ownershipMarker(spec.OwnerGroup),
 		"policy_engine_mode": "any",
 	}
 	var app application
 	if found {
 		appPath := "core/applications/" + url.PathEscape(spec.Name) + "/"
-		err = p.send(ctx, http.MethodPatch, appPath, appBody, &app, courier.Secret{})
+		err = p.updateIfChanged(ctx, appPath, appBody, &app, courier.Secret{})
 	} else {
 		err = p.send(ctx, http.MethodPost, "core/applications/", appBody, &app, courier.Secret{})
 	}
@@ -250,6 +256,91 @@ func (p *Provider) EnsureClient(
 			"provider_pk":      strconv.Itoa(prov.PK),
 		},
 	}, nil
+}
+
+func ownershipMarker(owner string) string { return managedMarker + "; owner: " + owner }
+
+// Adopt marks an existing, hand-built application as managed by Courier and
+// owned by spec.OwnerGroup. The broker then issues a new secret.
+func (p *Provider) Adopt(ctx context.Context, spec courier.ClientSpec) (courier.ClientRef, error) {
+	appPath := "core/applications/" + url.PathEscape(spec.Name) + "/"
+	var app application
+	found, err := p.get(ctx, appPath, &app)
+	if err != nil {
+		return courier.ClientRef{}, err
+	}
+	if !found {
+		return courier.ClientRef{}, fmt.Errorf("authentik: no application %q to adopt", spec.Name)
+	}
+	if app.Provider == nil {
+		return courier.ClientRef{}, fmt.Errorf("authentik: application %q has no provider to adopt", spec.Name)
+	}
+	if !strings.Contains(app.MetaDescription, managedMarker) {
+		body := map[string]any{"meta_description": ownershipMarker(spec.OwnerGroup)}
+		if err := p.send(ctx, http.MethodPatch, appPath, body, &app, courier.Secret{}); err != nil {
+			return courier.ClientRef{}, fmt.Errorf("authentik: mark application managed: %w", err)
+		}
+	}
+	ref, ok, err := p.Lookup(ctx, spec.Name)
+	if err != nil {
+		return courier.ClientRef{}, err
+	}
+	if !ok {
+		return courier.ClientRef{}, fmt.Errorf("authentik: application %q disappeared during adoption", spec.Name)
+	}
+	return ref, nil
+}
+
+// updateIfChanged PATCHes path only when want differs from the live object,
+// or a secret must be set, so routine drift repair does not write to the IdP.
+func (p *Provider) updateIfChanged(
+	ctx context.Context, path string, want map[string]any, out any, secret courier.Secret,
+) error {
+	var current map[string]any
+	found, err := p.get(ctx, path, &current)
+	if err != nil {
+		return err
+	}
+	if found && secret.IsZero() && !differs(want, current) {
+		raw, err := json.Marshal(current)
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(raw, out)
+	}
+	return p.send(ctx, http.MethodPatch, path, want, out, secret)
+}
+
+// differs reports whether any field in want has a different value in current.
+// Lists compare as sets, so the order the API returns them in is not drift.
+func differs(want, current map[string]any) bool {
+	for key, value := range want {
+		if canonical(value) != canonical(current[key]) {
+			return true
+		}
+	}
+	return false
+}
+
+func canonical(v any) string {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	var generic any
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return string(raw)
+	}
+	if list, ok := generic.([]any); ok {
+		items := make([]string, 0, len(list))
+		for _, item := range list {
+			items = append(items, canonical(item))
+		}
+		slices.Sort(items)
+		return "[" + strings.Join(items, ",") + "]"
+	}
+	out, _ := json.Marshal(generic)
+	return string(out)
 }
 
 // DeleteClient removes the application (and its bindings) and the provider.

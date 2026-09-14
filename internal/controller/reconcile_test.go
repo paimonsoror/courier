@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"testing"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -16,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	courierv1alpha1 "github.com/paimonsoror/courier/api/v1alpha1"
+	"github.com/paimonsoror/courier/internal/request"
 	"github.com/paimonsoror/courier/pkg/broker"
 	"github.com/paimonsoror/courier/pkg/courier"
 	"github.com/paimonsoror/courier/pkg/secretstore"
@@ -45,6 +47,10 @@ func (m *memIDP) EnsureClient(_ context.Context, spec courier.ClientSpec, secret
 		m.clients[spec.Name] = ref
 	}
 	return ref, nil
+}
+
+func (m *memIDP) Adopt(_ context.Context, spec courier.ClientSpec) (courier.ClientRef, error) {
+	return m.clients[spec.Name], nil
 }
 
 func (m *memIDP) DeleteClient(_ context.Context, ref courier.ClientRef) error {
@@ -151,6 +157,52 @@ func TestReconcileDeliversOnceAndKeepsSecret(t *testing.T) {
 	reconcileOK(t, r)
 	if i.secretsSet != 1 {
 		t.Fatalf("second reconcile issued another secret (secretsSet=%d)", i.secretsSet)
+	}
+}
+
+func TestReconcileRotatesOncePerAnnotationValue(t *testing.T) {
+	r, i, _ := newTestReconciler(t, sampleClient())
+	ctx := context.Background()
+	reconcileOK(t, r)
+
+	oc := fetch(t, r)
+	oc.Annotations = map[string]string{request.RotateAnnotation: "2026-09-14"}
+	if err := r.Update(ctx, oc); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOK(t, r)
+	if i.secretsSet != 2 {
+		t.Fatalf("a new rotate value must issue a new secret (secretsSet=%d)", i.secretsSet)
+	}
+	reconcileOK(t, r)
+	if i.secretsSet != 2 {
+		t.Fatalf("the same rotate value must not rotate again (secretsSet=%d)", i.secretsSet)
+	}
+	if got := fetch(t, r).Status.RotationHandled; got != "2026-09-14" {
+		t.Fatalf("rotationHandled = %q", got)
+	}
+}
+
+func TestReconcileRotatesWhenSecretTooOld(t *testing.T) {
+	oc := sampleClient()
+	oc.Spec.Rotation = &courierv1alpha1.RotationSpec{MaxAgeDays: 30}
+	r, i, _ := newTestReconciler(t, oc)
+	ctx := context.Background()
+	reconcileOK(t, r)
+	reconcileOK(t, r)
+	if i.secretsSet != 1 {
+		t.Fatalf("a fresh secret must not rotate (secretsSet=%d)", i.secretsSet)
+	}
+
+	got := fetch(t, r)
+	old := metav1.NewTime(time.Now().Add(-31 * 24 * time.Hour))
+	got.Status.LastSecretIssued = &old
+	if err := r.Status().Update(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOK(t, r)
+	if i.secretsSet != 2 {
+		t.Fatalf("a secret older than maxAgeDays must rotate (secretsSet=%d)", i.secretsSet)
 	}
 }
 

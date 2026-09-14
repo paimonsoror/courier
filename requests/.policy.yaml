@@ -14,3 +14,9 @@ allowedRedirectHosts:
 # Grants that need an extra, explicit approval: the label must be on the PR.
 grantApprovals:
   client_credentials: security-approved
+
+# Annotations that need an explicit approval when present on a changed request.
+# Adopting a hand-built client hands its control to Courier and invalidates its
+# current secret, so the identity team signs off.
+annotationApprovals:
+  courier.sororlab.dev/adopt: identity-approved
