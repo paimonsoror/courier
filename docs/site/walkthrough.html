@@ -384,6 +384,14 @@ ROTATION VERIFIED</code></pre>
           </tbody>
         </table>
       </div>
+      <figure class="shot">
+        <img src="assets/screenshots/pr4-authentik-adopted-app.jpg" alt="Authentik admin, application team-alpha: CRM integration (adopted), overview tab: provider courier-legacy-crm (OAuth2/OpenID Provider), policy engine mode ANY" loading="lazy">
+        <figcaption><b>The hand-built application after adoption.</b> Same application, now named for its owning team, with its provider renamed to Courier's convention.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/pr4-authentik-adopted-changelog.jpg" alt="Authentik changelog for the adopted application: Model created by akadmin at 9:31:40 PM, then Model updated by courier-controller at 9:38:46 PM and 9:38:50 PM, nothing after" loading="lazy">
+        <figcaption><b>Its whole history.</b> Created by hand (<code>akadmin</code>, 01:31:40 UTC), taken over by <code>courier-controller</code> in two writes at 01:38, then nothing: nineteen minutes and two resyncs later there are no further updates. Times shown in the browser's zone (UTC−4).</figcaption>
+      </figure>
 <pre><code>$ deploy/phase4/verify-adoption.sh
 NAME   READY   TYPE           CLIENT ID                                  SECRET PATH
 crm    True    confidential   Fx2FjQztQf1w2bxpAk9MrDawX2XlGlMVaal9JaEU   kv/teams/team-alpha/oauth-clients/legacy-crm

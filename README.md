@@ -46,6 +46,7 @@ full design and [docs/adr](docs/adr) for decisions.
 | 3 | Backstage Scaffolder template + status on Group pages | done ([backstage/](backstage), [walkthrough PR #2](docs/site/walkthrough.html#pr2)) |
 | 4 | Rotation (annotation or `rotation.maxAgeDays`), write-only-on-difference drift repair, adopt mode | done ([deploy/phase4](deploy/phase4), [walkthrough PRs #3–#4](docs/site/walkthrough.html#lifecycle)); audit → Loki open |
 | 5 | Okta adapter, `private_key_jwt`, adapter conformance suite | not started |
+| sandbox | One-command local lab on kind + podman | handoff written ([docs/sandbox-handoff.md](docs/sandbox-handoff.md)) |
 
 ## Repository layout
 
