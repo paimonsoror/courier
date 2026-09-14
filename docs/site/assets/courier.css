@@ -259,6 +259,15 @@ tr:last-child td { border-bottom: 0; }
 .phase p { margin: 0; color: var(--muted); font-size: 15px; }
 @media (max-width: 560px) { .phase { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
 
+/* ---------- screenshots ---------- */
+figure.shot { margin: 8px 0 22px; max-width: 100%; }
+figure.shot img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  border: 1px solid var(--rule); border-radius: 6px; background: var(--paper);
+}
+figure.shot figcaption { font-size: 13px; color: var(--muted); margin-top: 8px; max-width: 72ch; }
+figure.shot figcaption b { color: var(--ink); font-weight: 600; }
+
 /* ---------- footer ---------- */
 .site-footer {
   max-width: 1120px; margin: 48px auto 0; padding-top: 18px; border-top: 1px solid var(--rule);
