@@ -79,7 +79,9 @@ for short in teams:
         data = (body.get("data") or {}).get("data") or {}
         check(f"{team} (owner) reads the credentials", st == 200 and data.get("state") == "active"
               and bool(data.get("client_secret")), f"HTTP {st} state={data.get('state')}")
-        if data.get("token_endpoint"):
+        if "client_credentials" not in data.get("grant_types", "").split():
+            print(f"SKIP  token test: {data.get('grant_types')} clients need a user sign-in, not client_credentials")
+        elif data.get("token_endpoint"):
             code, err = http(data["token_endpoint"], {
                 "grant_type": "client_credentials", "client_id": data["client_id"],
                 "client_secret": data["client_secret"], "username": testers[f"{short}_username"],
