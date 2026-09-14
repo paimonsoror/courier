@@ -293,6 +293,10 @@
           </tbody>
         </table>
       </div>
+      <figure class="shot">
+        <img src="assets/screenshots/vault-team-bravo-entry-masked.jpg" alt="Vault UI showing teams/team-bravo/oauth-clients/team-bravo-report-exporter on the Secret tab, version 6, with keys authorization_endpoint, client_id, client_secret, client_type, grant_types, idp, issuer and jwks_uri, every value masked" loading="lazy">
+        <figcaption><b>The entry in the Vault UI, viewed by an administrator.</b> Every value is masked by default, and none were revealed for this capture.</figcaption>
+      </figure>
 
       <h3>Who can read it</h3>
 <pre><code><span class="c"># policy team-bravo</span>
@@ -373,6 +377,11 @@ identity group team-bravo-jwt   alias team-bravo on jwt/   →  policy team-brav
         <span class="label">Finding from this inventory, fixed</span>
         <p>Each KV v2 write creates a new version, and each version retains a copy of the secret, so the periodic resync was producing a new version of unchanged credentials every ten minutes. The controller now rewrites vault metadata only when the request itself changes (its generation differs from the last reconciled one). IdP drift repair is unchanged. Comparing IdP settings before writing, to quiet the Authentik event log, is planned with drift detection.</p>
       </div>
+      <p>The vault's own version history confirms the fix. Versions 1 and 2 are the delivery (pending, then active). Versions 3 to 6 are resyncs, exactly ten minutes apart. The fixed controller rolled out at about 22:27 UTC, and no version has been written since.</p>
+      <figure class="shot">
+        <img src="assets/screenshots/vault-team-bravo-version-history.jpg" alt="Vault UI version history for teams/team-bravo/oauth-clients/team-bravo-report-exporter: versions 1 and 2 created 5:41 PM, versions 3, 4, 5 and 6 created at 5:51, 6:01, 6:11 and 6:21 PM, version 6 current" loading="lazy">
+        <figcaption><b>Version history, captured more than two hours after the fix</b> (browser local time, UTC−4). The last version, 6, was created at 6:21 PM, before the fixed controller rolled out at about 6:27 PM.</figcaption>
+      </figure>
     </section>
 
     <section id="inventory">
