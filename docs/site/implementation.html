@@ -38,6 +38,7 @@
       <li><a href="#gitops">5. Pull request workflow</a></li>
       <li><a href="#workloads">6. Workload access</a></li>
       <li><a href="#image">7. Controller image</a></li>
+      <li><a href="#backstage">8. Backstage self-service</a></li>
       <li><a href="#verify">Verification</a></li>
       <li><a href="#operate">Day-2 operations</a></li>
       <li><a href="#troubleshoot">Troubleshooting</a></li>
@@ -84,6 +85,7 @@
         <li><div><span class="who">pull requests</span><p>Register the ArgoCD project and ApplicationSet; protect the branch; create the approval label.</p></div></li>
         <li><div><span class="who">workload access</span><p>Install External Secrets; create per-team vault roles; let ArgoCD place a store in every team namespace.</p></div></li>
         <li><div><span class="who">image</span><p>Build the controller in CI, push to the registry, and pin the deployment to the image digest.</p></div></li>
+        <li><div><span class="who">backstage</span><p>Add the request template, team groups and client entities to the catalog; give Backstage a GitHub token and read access to OAuthClients.</p></div></li>
       </ol>
     </section>
 
@@ -256,6 +258,64 @@ samples/python/verify.sh team-bravo report-exporter   <span class="c"># PYTHON S
       </div>
     </section>
 
+    <section id="backstage">
+      <h2>8. Backstage self-service</h2>
+      <p>Everything that changes as teams and clients are added lives in the Courier repository, so Backstage never needs a rebuild for a new team or request.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Piece</th><th>Where</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>Request template</td><td><code>backstage/templates/oauth-client/</code></td><td>Form plus skeleton; renders the request and its catalog entry and opens a pull request</td></tr>
+            <tr><td>Team groups</td><td><code>backstage/catalog/teams.yaml</code></td><td>One Group per team, <code>spec.type: courier-team</code>, which the form's team picker filters on</td></tr>
+            <tr><td>Client entities</td><td><code>requests/&lt;team&gt;/&lt;name&gt;.catalog.yml</code></td><td>Resource owned by the team; its label selector finds the OAuthClient</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Backstage configuration</h3>
+<pre><code><span class="c"># app-config.production.yaml: catalog locations</span>
+- type: url
+  target: https://github.com/paimonsoror/courier/blob/main/backstage/catalog/teams.yaml
+  rules: [{ allow: [Group] }]
+- type: url
+  target: https://github.com/paimonsoror/courier/blob/main/backstage/templates/oauth-client/template.yaml
+  rules: [{ allow: [Template] }]
+- type: url
+  target: https://github.com/paimonsoror/courier/blob/main/requests/*/*.catalog.yml
+  rules: [{ allow: [Resource] }]
+
+<span class="c"># app-config.yaml: show OAuthClients on the Kubernetes tab</span>
+kubernetes:
+  customResources:
+    - group: 'courier.sororlab.dev'
+      apiVersion: 'v1alpha1'
+      plural: 'oauthclients'</code></pre>
+      <p>Frontend: add the scaffolder and org plugins (<code>@backstage/plugin-scaffolder/alpha</code>, <code>@backstage/plugin-org/alpha</code>) to the app's features. Backend: the scaffolder backend and its GitHub module.</p>
+
+      <h3>Access Backstage needs</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Access</th><th>How</th></tr></thead>
+          <tbody>
+            <tr><td>Open pull requests on the Courier repository</td><td>Fine-grained GitHub token limited to that repository: Contents read/write, Pull requests read/write. Store it as Secret <code>backstage/backstage-github-token</code> and expose it as <code>GITHUB_TOKEN</code>.</td></tr>
+            <tr><td>Read client status</td><td>ClusterRole rule: <code>get</code>, <code>list</code>, <code>watch</code> on <code>courier.sororlab.dev/oauthclients</code> (and optionally <code>external-secrets.io</code> externalsecrets and secretstores)</td></tr>
+          </tbody>
+        </table>
+      </div>
+<pre><code><span class="c"># create the token secret without it touching shell history or the process list</span>
+read -rs GH_TOKEN
+printf %s "$GH_TOKEN" | kubectl -n backstage create secret generic backstage-github-token --from-file=token=/dev/stdin
+unset GH_TOKEN</code></pre>
+
+      <h3>Rules the validator adds for catalog entries</h3>
+      <ul>
+        <li>A <code>.catalog.yml</code> must have a matching request in the same team directory.</li>
+        <li>It must be a <code>backstage.io/v1alpha1</code> <code>Resource</code> named <code>&lt;team&gt;-&lt;name&gt;</code>, type <code>oauth-client</code>, owned by <code>group:default/&lt;team&gt;</code>.</li>
+        <li>Its namespace and label-selector annotations must point at its own request, and the request must carry label <code>courier.sororlab.dev/client: &lt;name&gt;</code>.</li>
+      </ul>
+      <p>ArgoCD only syncs <code>*.yaml</code>, so <code>.catalog.yml</code> files are never applied to the cluster.</p>
+    </section>
+
     <section id="verify">
       <h2>Verification</h2>
       <div class="table-wrap">
@@ -273,6 +333,8 @@ samples/python/verify.sh team-bravo report-exporter   <span class="c"># PYTHON S
             <tr><td>Everything a request created, per platform</td><td><code>deploy/phase2/inventory.sh &lt;team&gt; &lt;name&gt;</code></td><td>Objects, Authentik events, vault audit entries</td></tr>
             <tr><td>Python sample</td><td><code>samples/python/verify.sh &lt;team&gt; &lt;name&gt;</code></td><td><code>PYTHON SAMPLE VERIFIED</code></td></tr>
             <tr><td>External Secrets per team</td><td><code>deploy/phase2/verify-external-secrets.sh</code></td><td><code>EXTERNAL SECRETS VERIFIED</code></td></tr>
+            <tr><td>Backstage can read client status</td><td><code>kubectl auth can-i list oauthclients.courier.sororlab.dev --as=system:serviceaccount:backstage:backstage -A</code></td><td><code>yes</code></td></tr>
+            <tr><td>Self-service works end to end</td><td>Submit the Backstage form, merge the pull request, then <code>deploy/phase2/check-access.sh &lt;team&gt; &lt;name&gt;</code></td><td>Client on the team's Backstage page; <code>ACCESS CHECK PASSED</code></td></tr>
             <tr><td>Controller runs the pinned image</td><td><code>kubectl -n courier-system get pod -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'</code></td><td>The digest in the overlay</td></tr>
           </tbody>
         </table>
@@ -318,6 +380,10 @@ samples/python/verify.sh team-bravo report-exporter   <span class="c"># PYTHON S
             <tr><td>Vault entry version number climbs every few minutes</td><td>Controllers before <code>2ed3a9d</code> rewrote metadata on every resync</td><td>Run the pinned image at or after <code>sha-2ed3a9d</code>; metadata is now written only when the request changes</td></tr>
             <tr><td>Team <code>SecretStore</code> not Ready</td><td>No Kubernetes auth role for the team</td><td>Run <code>deploy/phase2/vault-team-roles.sh</code></td></tr>
             <tr><td>ExternalSecret <code>SecretSyncedError</code>: <code>could not get secret data from provider</code></td><td>Path belongs to another team, or the request is not Ready</td><td>Check the vault audit log for <em>permission denied</em> against the store's identity; check the request status</td></tr>
+            <tr><td>Form's team picker is empty</td><td>Team groups not in the catalog, or missing <code>spec.type: courier-team</code></td><td>Check the <code>teams.yaml</code> location and its <code>allow: [Group]</code> rule</td></tr>
+            <tr><td>Create fails at <em>Open the pull request</em></td><td>No or insufficient GitHub token</td><td>Fine-grained token with Contents and Pull requests write on the Courier repository, in <code>backstage-github-token</code>; restart Backstage</td></tr>
+            <tr><td>Client missing from its team's Backstage page</td><td>No <code>.catalog.yml</code>, or the catalog has not refreshed yet</td><td>Add the entry (the form does); wait a few minutes or refresh the location</td></tr>
+            <tr><td>Kubernetes tab shows the cluster but no OAuthClient</td><td>Missing <code>customResources</code> config, RBAC, or the client label</td><td>Check all three; <code>courier validate</code> catches a missing label</td></tr>
             <tr><td>Team-access applications stuck after installing External Secrets</td><td>Automated sync failed before the CRD or webhook existed and is not retried for the same revision</td><td>Sync the applications once by hand, or push a new commit</td></tr>
           </tbody>
         </table>

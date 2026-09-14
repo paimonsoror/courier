@@ -38,6 +38,7 @@
       <li><a href="#deliver">6. Delivery</a></li>
       <li><a href="#access">7. Access verified</a></li>
       <li><a href="#absent">What never happened</a></li>
+      <li><a href="#pr2">A second request, from Backstage</a></li>
       <li><a href="#learned">What we learned</a></li>
       <li><a href="#reproduce">Reproduce it</a></li>
     </ol>
@@ -234,6 +235,59 @@ ACCESS CHECK PASSED</code></pre>
             <tr><td>Anyone's inbox or chat</td><td>No one received it; the owning team reads it from the vault with their own identity</td></tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <section id="pr2">
+      <h2>A second request, from Backstage (pull request #2)</h2>
+      <p>Pull request #1 was written by hand. The second request came from the Backstage form, to prove the self-service path end to end: team-alpha asks for <code>orders-portal</code>, a web application that signs users in. It needs no approval label because it does not use <code>client_credentials</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time (UTC)</th><th>Step</th><th>Evidence</th></tr></thead>
+          <tbody>
+            <tr><td><code>01:12:02</code></td><td>Form submitted in Backstage</td><td>Scaffolder task: render 1 s, open pull request 3 s</td></tr>
+            <tr><td><code>01:12:05</code></td><td>Pull request #2 opened</td><td>Two files: <code>orders-portal.yaml</code> and <code>orders-portal.catalog.yml</code></td></tr>
+            <tr><td><code>01:12:27</code></td><td>Validate requests <span class="pill p-good">success</span></td><td>16-second run, approval <em>not required</em></td></tr>
+            <tr><td><code>01:15:20</code></td><td>Merged as <code>14bda35</code></td><td>Other CI finished at <code>01:15:09</code></td></tr>
+            <tr><td><code>01:16:02</code></td><td>Credentials issued</td><td><code>READY True</code>, client <code>tK6PAj0W…</code>; about 40 s after merge including an ApplicationSet refresh</td></tr>
+            <tr><td><code>01:17</code></td><td>Access check <span class="pill p-good">passed</span></td><td>team-alpha reads; team-bravo denied</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>Form to usable credentials: about four minutes</strong>, almost all of it the review and merge.</p>
+
+      <figure class="shot">
+        <img src="assets/screenshots/backstage-form-review.jpg" alt="Backstage Request an OAuth client form, Review step: owning team group:default/team-alpha, client name orders-portal, display name team-alpha orders portal, confidential client type, grant types authorization_code and refresh_token, redirect URI https://orders.sororlab.dev/oauth/callback, scope openid, and the purpose text" loading="lazy">
+        <figcaption><b>The request, as the requester reviewed it before clicking Create.</b></figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/backstage-task-done.jpg" alt="Backstage scaffolder task for Request an OAuth client: Render the request completed in 1 second, Open the pull request completed in 3 seconds, with Pull request and What happens next links and the task log" loading="lazy">
+        <figcaption><b>Backstage rendered both files and opened the pull request in four seconds.</b></figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/pr2-from-backstage.jpg" alt="GitHub pull request #2, request team-alpha orders-portal (authorization_code, refresh_token), with the generated description table showing team, client, type, grants and requested by paimon, the purpose and the vault path" loading="lazy">
+        <figcaption><b>Pull request #2 as reviewers see it.</b> The description is generated from the form, including who asked and why.</figcaption>
+      </figure>
+
+      <h3>Delivered, and visible to the team</h3>
+<pre><code>$ deploy/phase2/check-access.sh team-alpha orders-portal
+request team-alpha/orders-portal is Ready; credentials at kv/teams/team-alpha/oauth-clients/team-alpha-orders-portal
+<span class="k">PASS</span>  team-alpha (owner) reads the credentials
+<span class="k">SKIP</span>  token test: authorization_code refresh_token clients need a user sign-in, not client_credentials
+<span class="k">PASS</span>  team-bravo is denied
+
+ACCESS CHECK PASSED</code></pre>
+      <figure class="shot">
+        <img src="assets/screenshots/backstage-group-team-alpha.jpg" alt="Backstage group page for Team Alpha: relations graph showing parent sororlab, member Paimon, and ownership of team-alpha billing sync job and team-alpha orders portal" loading="lazy">
+        <figcaption><b>Team Alpha's page in Backstage, minutes after merge.</b> The new client appears next to the existing one; no one registered it by hand.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/backstage-orders-portal-kubernetes.jpg" alt="Backstage Kubernetes tab for team-alpha orders portal: OAuthClient orders-portal with its client ID, a Ready condition with reason Delivered and the credentials path, Credentials Delivered checked, identity provider authentik" loading="lazy">
+        <figcaption><b>Live delivery status on the client's page</b>, read from the <code>OAuthClient</code> object in the cluster. The secret itself never appears here.</figcaption>
+      </figure>
+      <div class="callout">
+        <span class="label">Who is the author?</span>
+        <p>GitHub shows the pull request as authored by the account behind Backstage's GitHub token, for every requester. The actual requester is recorded in the description (<em>Requested by</em>). A GitHub App or per-user GitHub sign-in in Backstage would make GitHub attribute it directly.</p>
       </div>
     </section>
 

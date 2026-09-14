@@ -58,6 +58,7 @@
           <thead><tr><th>Component</th><th>Role</th><th>Where it lives</th></tr></thead>
           <tbody>
             <tr><td><strong>Request repository</strong></td><td>One YAML file per client at <code>requests/&lt;team&gt;/&lt;name&gt;.yaml</code>; the policy file sets organization rules</td><td>GitHub, <code>requests/</code></td></tr>
+            <tr><td><strong>Backstage</strong></td><td>Request form that opens the pull request; each client appears as a Resource owned by its team, with live delivery status</td><td>Template <code>backstage/templates/oauth-client</code>; entities <code>requests/&lt;team&gt;/&lt;name&gt;.catalog.yml</code></td></tr>
             <tr><td><strong>Validation check</strong></td><td><code>courier validate</code> runs on every pull request, annotates problems and posts a reviewer summary</td><td>GitHub Actions, <code>.github/workflows/requests.yml</code></td></tr>
             <tr><td><strong>Code owners</strong></td><td>Decide who must approve each team's requests and any policy change</td><td><code>.github/CODEOWNERS</code> plus branch protection</td></tr>
             <tr><td><strong>Sync</strong></td><td>One ArgoCD application per team directory; a locked project allows only <code>OAuthClient</code> objects in <code>team-*</code> namespaces</td><td>ArgoCD, <code>deploy/argocd/</code></td></tr>

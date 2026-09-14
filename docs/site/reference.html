@@ -43,6 +43,7 @@
       <li><a href="#team-access">Team access</a></li>
       <li><a href="#python-api">Python sample API</a></li>
       <li><a href="#image-ref">Controller image</a></li>
+      <li><a href="#backstage-ref">Backstage</a></li>
     </ol>
   </nav>
 
@@ -316,6 +317,44 @@ path "kv/metadata/teams/+/oauth-clients/*" {
           </tbody>
         </table>
       </div>
+    </section>
+
+    <section id="backstage-ref">
+      <h2>Backstage</h2>
+      <h3>Template <code>courier-oauth-client</code></h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Required</th><th>Rules</th></tr></thead>
+          <tbody>
+            <tr><td><code>team</code></td><td>yes</td><td>Group entity with <code>spec.type: courier-team</code></td></tr>
+            <tr><td><code>name</code></td><td>yes</td><td><code>^[a-z0-9]([-a-z0-9]*[a-z0-9])?$</code>, max 40</td></tr>
+            <tr><td><code>displayName</code></td><td>no</td><td>free text</td></tr>
+            <tr><td><code>clientType</code></td><td>yes</td><td><code>confidential</code> (default) or <code>public</code></td></tr>
+            <tr><td><code>grantTypes</code></td><td>yes</td><td>one or more of <code>authorization_code</code>, <code>refresh_token</code>, <code>client_credentials</code></td></tr>
+            <tr><td><code>redirectUris</code></td><td>no</td><td>list; required by the validator for <code>authorization_code</code></td></tr>
+            <tr><td><code>scopes</code></td><td>no</td><td>list, default <code>[openid]</code></td></tr>
+            <tr><td><code>purpose</code></td><td>yes</td><td>free text, copied into the pull request</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Steps: <code>fetch:template</code> into <code>requests/&lt;team&gt;/</code>, then <code>publish:github:pull-request</code> on branch <code>request/&lt;team&gt;-&lt;name&gt;</code>. Output links: the pull request and the request guide.</p>
+
+      <h3>Client entity (<code>&lt;name&gt;.catalog.yml</code>)</h3>
+<pre><code><span class="k">apiVersion</span>: backstage.io/v1alpha1
+<span class="k">kind</span>: Resource
+<span class="k">metadata</span>:
+  <span class="k">name</span>: &lt;team&gt;-&lt;name&gt;
+  <span class="k">annotations</span>:
+    <span class="k">backstage.io/kubernetes-namespace</span>: &lt;team&gt;
+    <span class="k">backstage.io/kubernetes-label-selector</span>: courier.sororlab.dev/client=&lt;name&gt;
+    <span class="k">courier.sororlab.dev/secret-path</span>: kv/teams/&lt;team&gt;/oauth-clients/&lt;team&gt;-&lt;name&gt;
+<span class="k">spec</span>:
+  <span class="k">type</span>: oauth-client
+  <span class="k">owner</span>: group:default/&lt;team&gt;</code></pre>
+      <p>The matching request must carry <code>metadata.labels["courier.sororlab.dev/client"]: &lt;name&gt;</code>.</p>
+
+      <h3>Groups</h3>
+      <p><code>backstage/catalog/teams.yaml</code>: one <code>Group</code> per team, name equal to the IdP group and namespace, <code>spec.type: courier-team</code>, parent <code>sororlab</code>.</p>
     </section>
   </main>
 </div>

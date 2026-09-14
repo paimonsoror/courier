@@ -43,7 +43,7 @@ full design and [docs/adr](docs/adr) for decisions.
 | 1 | Kubernetes-free core (IdP adapter, Vault writer, ordered broker) + `OAuthClient` controller wrapping it | done ([deploy/phase1](deploy/phase1), [ADR 0003](docs/adr/0003-core-library-thin-controller.md)) |
 | 2 | Pull request flow: `requests/`, `courier validate` check, CODEOWNERS, ArgoCD ApplicationSet; docs site | done ([docs/site](docs/site/index.html)) |
 | 2b | Per-team SecretStore + External Secrets, Python consumer sample, controller image on GHCR pinned by digest | done ([use credentials](docs/site/use-credentials.html)) |
-| 3 | Backstage Scaffolder template + status on Group pages | not started |
+| 3 | Backstage Scaffolder template + status on Group pages | done ([backstage/](backstage), [walkthrough PR #2](docs/site/walkthrough.html#pr2)) |
 | 4 | Rotation, drift detection, adopt mode, audit → Loki | not started |
 | 5 | Okta adapter, `private_key_jwt`, adapter conformance suite | not started |
 

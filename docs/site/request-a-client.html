@@ -31,7 +31,8 @@
     <ol>
       <li><a href="#before">Before you start</a></li>
       <li><a href="#type">Choose a client type</a></li>
-      <li><a href="#write">Write the request</a></li>
+      <li><a href="#backstage">From Backstage</a></li>
+      <li><a href="#write">Or write it by hand</a></li>
       <li><a href="#pr">Open the pull request</a></li>
       <li><a href="#after-merge">After merge</a></li>
       <li><a href="#read">Read your credentials</a></li>
@@ -74,8 +75,34 @@
       <p>If you are unsure, pick <code>confidential</code> for anything that runs on a server and <code>public</code> for anything installed on a user's device.</p>
     </section>
 
+    <section id="backstage">
+      <h2>From Backstage (easiest)</h2>
+      <p>In Backstage, open <strong>Create</strong> and choose <strong>Request an OAuth client</strong>. The form asks four things and opens the pull request for you. It writes exactly the files described in the next section.</p>
+      <figure class="shot">
+        <img src="assets/screenshots/backstage-template-card.jpg" alt="Backstage Create page listing the Request an OAuth client template with its description and tags oauth, identity and courier" loading="lazy">
+        <figcaption><b>Create → Request an OAuth client.</b></figcaption>
+      </figure>
+      <ol class="seq">
+        <li><div><span class="who">owner and name</span><p>Pick your team (only Courier teams are offered), a client name and an optional display name.</p></div></li>
+        <li><div><span class="who">client</span><p>Choose the client type and grants, and add redirect URIs and scopes.</p></div></li>
+        <li><div><span class="who">why</span><p>Say what the client is for. It goes into the pull request for reviewers.</p></div></li>
+        <li><div><span class="who">review</span><p>Check the summary and click <strong>Create</strong>. Backstage opens the pull request and links to it.</p></div></li>
+      </ol>
+      <div class="two">
+        <figure class="shot">
+          <img src="assets/screenshots/backstage-form-owner-and-name.jpg" alt="Backstage form step 1, Owner and name: owning team group:default/team-alpha, client name orders-portal, display name team-alpha orders portal" loading="lazy">
+          <figcaption><b>Step 1.</b> The team picker lists only Courier teams.</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/screenshots/backstage-form-client.jpg" alt="Backstage form step 2, Client: grant types authorization_code and refresh_token checked, client_credentials unchecked with a note that it needs security approval, a redirect URI and the openid scope" loading="lazy">
+          <figcaption><b>Step 2.</b> The form warns that <code>client_credentials</code> needs security approval.</figcaption>
+        </figure>
+      </div>
+      <p>After merge, your client appears on your team's page in Backstage, with its delivery status on the <strong>Kubernetes</strong> tab and a link to <a href="use-credentials.html">Use your credentials</a>. See <a href="walkthrough.html#pr2">pull request #2</a> for a real run.</p>
+    </section>
+
     <section id="write">
-      <h2>Write the request</h2>
+      <h2>Or write the request by hand</h2>
       <p>Create <code>requests/&lt;team&gt;/&lt;name&gt;.yaml</code>. The file name must match <code>metadata.name</code>, and <code>metadata.namespace</code> must match your team directory.</p>
 
       <h3>A service that signs users in</h3>
