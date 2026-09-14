@@ -168,6 +168,10 @@ needs the "security-approved" label on the pull request (grant requires approval
 courier-controller            Synced   Healthy   de172bd07d1f67f87205325ff5fbde04ee12ea2d
 courier-requests-team-alpha   Synced   Healthy   de172bd07d1f67f87205325ff5fbde04ee12ea2d
 courier-requests-team-bravo   Synced   Healthy   de172bd07d1f67f87205325ff5fbde04ee12ea2d</code></pre>
+      <figure class="shot">
+        <img src="assets/screenshots/argocd-team-bravo-tree.jpg" alt="Argo CD application courier-requests-team-bravo: Healthy, Synced, last sync OK to de172bd from the pull request #1 merge, managing a single OAuthClient named report-exporter" loading="lazy">
+        <figcaption><b>courier-requests-team-bravo in Argo CD.</b> The generated application manages exactly one object: the <code>report-exporter</code> OAuthClient. Last sync: the merge of pull request #1.</figcaption>
+      </figure>
       <div class="callout">
         <span class="label">Timing</span>
         <p>A minute after merge the team-bravo application did not exist yet: ArgoCD polls Git every few minutes by default. We asked the ApplicationSet to re-read Git immediately, and the application appeared within seconds. Without the refresh the same thing happens on the next poll. A GitHub webhook to ArgoCD removes the wait.</p>

@@ -180,6 +180,14 @@
           </tbody>
         </table>
       </div>
+      <figure class="shot">
+        <img src="assets/screenshots/argocd-team-bravo-tree.jpg" alt="Argo CD application details tree for courier-requests-team-bravo with one oauthclient resource, report-exporter, Healthy and Synced" loading="lazy">
+        <figcaption><b>The application the merge created.</b> One managed resource, the <code>report-exporter</code> OAuthClient; last sync from the pull request #1 merge.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/argocd-courier-apps.jpg" alt="Argo CD applications list filtered to courier: courier, courier-controller, courier-requests-team-alpha, courier-requests-team-bravo, courier-team-access-team-alpha and courier-team-access-team-bravo, all Healthy and Synced" loading="lazy">
+        <figcaption><b>Every Courier application in Argo CD.</b> Each team directory produces a request application and, since phase 2b, a team-access application.</figcaption>
+      </figure>
     </section>
 
     <section id="kubernetes">
@@ -228,6 +236,10 @@
           </tbody>
         </table>
       </div>
+      <figure class="shot">
+        <img src="assets/screenshots/authentik-provider-overview.jpg" alt="Authentik admin page for OAuth2/OpenID provider courier-team-bravo-report-exporter: assigned to application team-bravo nightly report exporter, client type Confidential, the client ID, no redirect URIs, and the issuer, authorize, token, userinfo and JWKS URLs" loading="lazy">
+        <figcaption><b>The provider in Authentik's admin console.</b> Confidential, no redirect URIs, and the issuer and token endpoints that also appear in the vault entry.</figcaption>
+      </figure>
       <h3>Application and access</h3>
       <div class="table-wrap">
         <table>
@@ -240,6 +252,10 @@
           </tbody>
         </table>
       </div>
+      <figure class="shot">
+        <img src="assets/screenshots/authentik-app-bindings.jpg" alt="Authentik application team-bravo nightly report exporter, Policy Group User Bindings tab, policy engine mode ANY, a single binding: order 0, Group team-bravo, enabled, timeout 30" loading="lazy">
+        <figcaption><b>Who may use the client.</b> A single binding to group <code>team-bravo</code>, created by Courier from the request's owner.</figcaption>
+      </figure>
       <h3>Authentik event log for this client</h3>
 <pre><code>21:41:42  model_created  by courier-controller  oauth2provider  courier-team-bravo-report-exporter
 21:51:48  model_updated  by courier-controller  oauth2provider  courier-team-bravo-report-exporter
@@ -247,6 +263,10 @@
 22:01:51  model_updated  by courier-controller  oauth2provider  courier-team-bravo-report-exporter
 22:01:52  model_updated  by courier-controller  application     team-bravo: nightly report exporter</code></pre>
       <p>Every change is attributed to the scoped <code>courier-controller</code> account, not to an administrator. The updates every ten minutes are the controller's routine drift repair, discussed <a href="#after">below</a>.</p>
+      <figure class="shot">
+        <img src="assets/screenshots/authentik-provider-changelog.jpg" alt="Authentik provider changelog listing Model updated entries by user courier-controller every ten minutes, from client IP 10.0.0.206" loading="lazy">
+        <figcaption><b>The provider's changelog, hours later</b> (browser local time, UTC−4). Every entry is attributed to <code>courier-controller</code>. The steady ten-minute updates are IdP drift repair; the vault side of this churn was fixed, and quieting these entries is on the roadmap.</figcaption>
+      </figure>
     </section>
 
     <section id="vault">
